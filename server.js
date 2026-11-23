@@ -36,8 +36,9 @@ const norm = s => String(s || '').trim().toLowerCase().replace(/^@/, '')
 function getUser(tgId, initDataUser) {
   if (!users[tgId]) {
     users[tgId] = {
-      name: initDataUser.first_name || '',
-      username: initDataUser.username || '',
+      name: (initDataUser && initDataUser.first_name) || '',
+      username: (initDataUser && initDataUser.username) || '',
+      gameNick: '',
       spins: 0,
       donated: 0
     }
@@ -45,7 +46,7 @@ function getUser(tgId, initDataUser) {
   return users[tgId]
 }
 
-// === Telegram initData verification (актуальный алгоритм Telegram) ===
+// === Telegram initData verification (актуальный алгоритм) ===
 function verifyInitData(initData) {
   try {
     if (!initData || typeof initData !== 'string') return null
@@ -113,7 +114,7 @@ async function notifyOwner(text) {
   }
 }
 
-// === Поиск игрока по донату: имя доната, @ник в сообщении, частичное совпадение ===
+// === Поиск игрока по донату ===
 function findUserByDonation(nick, message) {
   let entry = Object.values(users).find(u => norm(u.username) === nick || norm(u.name) === nick)
   if (entry) return entry
@@ -140,6 +141,31 @@ function findUserByDonation(nick, message) {
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 app.get('/api/prizes', (req, res) => res.json({ ok: true, prizes }))
 
+// Баланс игрока + сохранение игрового ника
+app.post('/api/me', (req, res) => {
+  let tgUser = null
+  if (BOT_TOKEN) {
+    tgUser = verifyInitData(req.body && req.body.initData)
+  }
+  if (!tgUser && ALLOW_DEV) {
+    tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+  }
+  if (!tgUser) return res.status(403).json({ ok: false, error: 'auth_failed' })
+
+  const user = getUser(String(tgUser.id), tgUser)
+
+  const gameNick = String((req.body && req.body.gameNick) || '').trim()
+  if (gameNick && !user.gameNick) user.gameNick = gameNick.slice(0, 40)
+
+  res.json({
+    ok: true,
+    spins: user.spins,
+    donated: user.donated,
+    name: '@' + (user.username || user.name || tgUser.id),
+    gameNick: user.gameNick || ''
+  })
+})
+
 app.post('/api/spin', (req, res) => {
   console.log('[spin] initData получен:', !!(req.body && req.body.initData))
 
@@ -154,7 +180,6 @@ app.post('/api/spin', (req, res) => {
     if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
     tgUser = ver
   } else if (BOT_TOKEN && ALLOW_DEV) {
-    // DEV-режим: пробуем проверить initData, если не вышло — работаем как dev-пользователь
     const ver = verifyInitData(req.body && req.body.initData)
     tgUser = ver || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
   } else if (!ALLOW_DEV) {
@@ -171,11 +196,12 @@ app.post('/api/spin', (req, res) => {
 
   user.spins -= 1
   const { index, prize } = pickPrize()
-  winsLog.push({ tgId, tgName: '@' + (user.username || user.name), prize: prize.label, at: Date.now() })
+  winsLog.push({ tgId, tgName: '@' + (user.username || user.name), gameNick: user.gameNick || '', prize: prize.label, at: Date.now() })
   if (winsLog.length > 500) winsLog.shift()
 
-  const msg = `🎰 ${'@' + (user.username || user.name || tgId)} прокрутил рулетку — выпало: «${prize.label}»\n` +
-    `Донатов всего: ${user.donated} ₽ | Круток осталось: ${user.spins}`
+  const msg = `🎰 ${'@' + (user.username || user.name || tgId)}` +
+    (user.gameNick ? ` (игровой ник: ${user.gameNick})` : '') +
+    `\nВыпало: «${prize.label}»\nКруток осталось: ${user.spins}`
   notifyOwner(msg)
 
   res.json({ ok: true, index, prize, spinsLeft: user.spins })
@@ -199,10 +225,10 @@ const KEY = location.search;
 async function load(){
   const r = await fetch('/api/admin/data' + KEY); const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка доступа'; return; }
-  document.getElementById('bal').innerHTML = '<tr><th>Игрок</th><th>Круток</th><th>Задонатил, ₽</th></tr>' +
-    j.users.map(u => '<tr><td>'+u.name+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
-  document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Приз</th></tr>' +
-    j.wins.map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+w.prize+'</td></tr>').join('');
+  document.getElementById('bal').innerHTML = '<tr><th>Игрок (ТГ)</th><th>Игровой ник</th><th>Круток</th><th>Задонатил, ₽</th></tr>' +
+    j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
+  document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Игровой ник</th><th>Приз</th></tr>' +
+    j.wins.map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+(w.gameNick||'—')+'</td><td>'+w.prize+'</td></tr>').join('');
   document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th>Время</th><th></th></tr>' +
     (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td>'+new Date(p.at).toLocaleTimeString()+'</td><td><button onclick="assign('+p.id+')">Начислить игроку</button></td></tr>').join('') : '<tr><td colspan="5">пусто</td></tr>');
 }
@@ -229,7 +255,7 @@ app.get('/api/admin/data', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
   res.json({
     ok: true,
-    users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
+    users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), gameNick: u.gameNick, spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
     wins: winsLog.slice().reverse(),
     pending: pendingDonations.slice(-100)
   })
@@ -327,7 +353,7 @@ async function pollDonations() {
     if (!r.ok) { console.log('[DA] ошибка опроса:', r.status); return }
     const j = await r.json()
     const list = j.data || []
-    const cutoff = Date.now() - 10 * 60 * 1000 // свежими считаем донаты за последние 10 минут
+    const cutoff = Date.now() - 10 * 60 * 1000
 
     if (!daFirstPollDone) {
       for (const d of list) {
@@ -353,15 +379,15 @@ async function pollDonations() {
         if (spins > 0) {
           user.spins += spins
           user.donated += amount
-          console.log(`[DA] @${user.username || user.name}: +${spins} круток (донат ${amount} ₽, имя доната: "${nick}")`)
-          notifyOwner(`💰 Донат ${amount} ₽ от «${nick}» → игрок @${user.username || user.name}: +${spins} круток`)
+          console.log(`[DA] @${user.username || user.name}: +${spins} круток (донат ${amount} ₽, имя доната: "${nick}", сообщение: "${message}")`)
+          notifyOwner(`💰 Донат ${amount} ₽ от «${nick}»${message ? ` («${message}»)` : ''} → игрок @${user.username || user.name}: +${spins} круток`)
         } else {
           pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
         }
       } else {
         pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
         console.log(`[DA] донат без совпадения: ${nick || '(без имени)'} — ${amount} ₽ (назначь вручную в /admin)`)
-        notifyOwner(`⚠️ Донат ${amount} ₽ от «${nick || 'без имени'}» не распознан — назначь крутки в /admin`)
+        notifyOwner(`⚠️ Донат ${amount} ₽ от «${nick || 'без имени'}»${message ? ` («${message}»)` : ''} не распознан — назначь крутки в /admin`)
       }
     }
   } catch (e) {
