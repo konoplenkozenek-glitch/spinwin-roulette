@@ -16,6 +16,26 @@
     padding: 20px 12px 40px;
   }
   h1 { color: #FFD700; font-size: 26px; text-shadow: 0 0 14px rgba(255,215,0,.45); margin-bottom: 6px; }
+
+  /* Вращающиеся золотые звёзды по бокам заголовка */
+  .spin-star {
+    display: inline-block;
+    font-size: 30px;
+    filter: drop-shadow(0 0 8px rgba(255,215,0,.6));
+  }
+  .spin-star.left { margin-right: 10px; animation: starSpinCW 2.2s linear infinite; }
+  .spin-star.right { margin-left: 10px; animation: starSpinCCW 2.2s linear infinite; }
+  @keyframes starSpinCW {
+    from { transform: rotate(0deg) scale(1); }
+    50%  { transform: rotate(180deg) scale(1.15); }
+    to   { transform: rotate(360deg) scale(1); }
+  }
+  @keyframes starSpinCCW {
+    from { transform: rotate(360deg) scale(1); }
+    50%  { transform: rotate(180deg) scale(1.15); }
+    to   { transform: rotate(0deg) scale(1); }
+  }
+
   .balance { font-size: 15px; color: #ffe9a8; margin-bottom: 14px; min-height: 20px; }
 
   .btn {
@@ -65,7 +85,7 @@
 </head>
 <body>
 
-  <h1>🎰 Золотая Удача</h1>
+  <h1><span class="spin-star left">⭐</span>Золотая Удача<span class="spin-star right">⭐</span></h1>
   <div class="balance" id="balance">Загружаем… попытка 1/5</div>
 
   <div class="wheel" id="wheel">🎁</div>
@@ -74,7 +94,7 @@
 
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
-    💸 Задонать 100 ₽ = 1 крутка
+    💸 Задонать 100 ₽ = 1 прокрутка
     <small>в сообщении к донату напиши свой @ник из Telegram</small>
   </a>
 
@@ -82,12 +102,12 @@
     <h3>📌 Как играть и донатить правильно</h3>
     <ol>
       <li>Открой рулетку и нажми «Крутить!» — так ты регистрируешься (при заходе введи свой игровой ник).</li>
-      <li>Донат: 100 ₽ = 1 крутка.</li>
+      <li>Донат: 100 ₽ = 1 прокрутка.</li>
     </ol>
-    <div class="main-rule">❗ САМОЕ ГЛАВНОЕ: в сообщении к донату напиши свой ПРАВИЛЬНЫЙ ник из Telegram (@ник). Без ника, или с ошибкой в нике — крутки НЕ ЗАСЧИТАЮТСЯ автоматически!</div>
-    <div class="main-rule">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку — крутки зачислятся на баланс.</div>
+    <div class="main-rule">❗ САМОЕ ГЛАВНОЕ: в сообщении к донату напиши свой ПРАВИЛЬНЫЙ ник из Telegram (@ник). Без ника, или с ошибкой в нике — прокрутки НЕ ЗАСЧИТАЮТСЯ автоматически!</div>
+    <div class="main-rule">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку — прокрутки зачислятся на баланс.</div>
     <ol start="3">
-      <li>Крутки придут автоматически за 1–2 минуты.</li>
+      <li>Прокрутки придут автоматически за 1–2 минуты.</li>
     </ol>
     <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно <b>@ник из Telegram</b> в сообщении доната.</p>
   </div>
@@ -99,7 +119,7 @@
 
 <script>
 // ⚙️ ЗАМЕНИ на свою ссылку доната с DonationAlerts
-const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
+const DONATE_URL = 'https://www.donationalerts.com/r/ТВОЙ_НИК';
 
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -154,7 +174,7 @@ async function loadBalance() {
             });
           }
         }
-        elBalance.textContent = `Привет, ${j.name}! Круток: ${j.spins}` + (gameNickSaved ? ` | игровой ник: ${gameNickSaved}` : '');
+        elBalance.textContent = `Привет, ${j.name}! Прокрутов: ${j.spins}` + (gameNickSaved ? ` | игровой ник: ${gameNickSaved}` : '');
         return;
       }
     } catch (e) { /* пробуем ещё раз */ }
@@ -187,11 +207,11 @@ async function spin() {
     if (j.ok) {
       elWheel.textContent = '🎉';
       elResult.className = 'result win';
-      elResult.innerHTML = `🎁 Выпало: <b>${j.prize.label}</b><br>Круток осталось: <b>${j.spinsLeft}</b><br><small>Скриншот этого окна отправь администратору для получения приза!</small>`;
+      elResult.innerHTML = `🎁 Выпало: <b>${j.prize.label}</b><br>Прокрутов осталось: <b>${j.spinsLeft}</b><br><small>Скриншот этого окна отправь администратору для получения приза!</small>`;
     } else if (j.error === 'no_spins') {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
-      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь написать свой @ник из Telegram в сообщении доната!'}`;
+      elResult.innerHTML = `😕 Прокрутов нет.<br>${j.message || 'Задонать 100 ₽ = 1 прокрутка — и не забудь написать свой @ник из Telegram в сообщении доната!'}`;
     } else {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
