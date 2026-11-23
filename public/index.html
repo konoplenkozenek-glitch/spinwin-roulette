@@ -70,18 +70,18 @@
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
     💸 Задонать 100 ₽ = 1 крутка
-    <small>в сообщении к донату укажи @ник из ТГ и игровой ник</small>
+    <small>в сообщении к донату оставь свой @ник из Telegram</small>
   </a>
 
   <div class="howto">
     <h3>📌 Как играть и донатить правильно</h3>
     <ol>
-      <li>Открой рулетку и нажми «Крутить!» — так ты регистрируешься.</li>
+      <li>Открой рулетку и нажми «Крутить!» — так ты регистрируешься (при заходе введи свой игровой ник).</li>
       <li>Донат: 100 ₽ = 1 крутка.</li>
-      <li><b>Самое главное:</b> в сообщении к донату напиши <b>@ник из Telegram</b> <b>и свой игровой ник</b> — например: <code>@Alina20061995 AlinaGame</code>. По нику ТГ крутки найдут тебя, по игровому нику админ выдаст приз!</li>
+      <li><b>Самое главное:</b> в сообщении к донату оставь свой <b>@ник из Telegram</b> — по нему крутки найдут тебя. Игровой ник вводится при входе в рулетку, в донате он не нужен.</li>
       <li>Крутки придут автоматически за 1–2 минуты.</li>
     </ol>
-    <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно ник Telegram <b>и игровой ник</b> в сообщении доната.</p>
+    <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно <b>@ник из Telegram</b> в сообщении доната.</p>
   </div>
 
   <div class="prizes">
@@ -91,7 +91,7 @@
 
 <script>
 // ⚙️ ЗАМЕНИ на свою ссылку доната с DonationAlerts
-const DONATE_URL = 'https://www.donationalerts.com/r/ТВОЙ_НИК';
+const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
 
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -183,7 +183,7 @@ async function spin() {
     } else if (j.error === 'no_spins') {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
-      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь написать @ник из ТГ и игровой ник в сообщении доната!'}`;
+      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь оставить свой @ник из Telegram в сообщении доната!'}`;
     } else {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
