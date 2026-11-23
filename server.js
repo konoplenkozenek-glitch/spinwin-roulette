@@ -45,7 +45,7 @@ function getUser(tgId, initDataUser) {
   return users[tgId]
 }
 
-// === Telegram initData verification ===
+// === Telegram initData verification (актуальный алгоритм Telegram) ===
 function verifyInitData(initData) {
   try {
     if (!initData || typeof initData !== 'string') return null
@@ -56,7 +56,7 @@ function verifyInitData(initData) {
     const pairs = []
     for (const [key, value] of urlParams.entries()) pairs.push(`${key}=${value}`)
     pairs.sort()
-    const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest()
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest()
     const hmac = crypto.createHmac('sha256', secretKey).update(pairs.join('\n')).digest('hex')
     if (hmac !== hash) return null
     const userStr = urlParams.get('user')
@@ -115,13 +115,11 @@ async function notifyOwner(text) {
 
 // === Поиск игрока по донату: имя доната, @ник в сообщении, частичное совпадение ===
 function findUserByDonation(nick, message) {
-  // 1) Точное совпадение ника доната с @username или именем игрока
   let entry = Object.values(users).find(u => norm(u.username) === nick || norm(u.name) === nick)
   if (entry) return entry
 
   const text = `${nick} ${message || ''}`.toLowerCase()
 
-  // 2) Ищем ник в тексте доната (сообщение или имя)
   const m = text.match(/@?([a-z0-9_]{4,32})/)
   if (m) {
     const cand = m[1]
@@ -129,7 +127,6 @@ function findUserByDonation(nick, message) {
     if (entry) return entry
   }
 
-  // 3) Частичное совпадение: ник игрока встречается в тексте доната
   for (const u of Object.values(users)) {
     const un = norm(u.username)
     if (un && un.length >= 4 && text.includes(un)) return u
@@ -144,6 +141,8 @@ app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 app.get('/api/prizes', (req, res) => res.json({ ok: true, prizes }))
 
 app.post('/api/spin', (req, res) => {
+  console.log('[spin] initData получен:', !!(req.body && req.body.initData))
+
   if (!BOT_TOKEN && !ALLOW_DEV) {
     return res.status(400).json({ ok: false, error: 'Server not configured: BOT_TOKEN is required' })
   }
