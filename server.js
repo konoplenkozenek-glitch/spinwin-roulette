@@ -113,6 +113,32 @@ async function notifyOwner(text) {
   }
 }
 
+// === Поиск игрока по донату: имя доната, @ник в сообщении, частичное совпадение ===
+function findUserByDonation(nick, message) {
+  // 1) Точное совпадение ника доната с @username или именем игрока
+  let entry = Object.values(users).find(u => norm(u.username) === nick || norm(u.name) === nick)
+  if (entry) return entry
+
+  const text = `${nick} ${message || ''}`.toLowerCase()
+
+  // 2) Ищем ник в тексте доната (сообщение или имя)
+  const m = text.match(/@?([a-z0-9_]{4,32})/)
+  if (m) {
+    const cand = m[1]
+    entry = Object.values(users).find(u => norm(u.username) === cand || norm(u.name) === cand)
+    if (entry) return entry
+  }
+
+  // 3) Частичное совпадение: ник игрока встречается в тексте доната
+  for (const u of Object.values(users)) {
+    const un = norm(u.username)
+    if (un && un.length >= 4 && text.includes(un)) return u
+    const nm = norm(u.name)
+    if (nm && nm.length >= 4 && text.includes(nm)) return u
+  }
+  return null
+}
+
 // === API ===
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 app.get('/api/prizes', (req, res) => res.json({ ok: true, prizes }))
@@ -168,7 +194,7 @@ app.get('/admin', (req, res) => {
 <button onclick="addSpins()">Начислить</button><span id="msg"></span>
 <h2>Балансы круток</h2><table id="bal"></table>
 <h2>Журнал выигрышей</h2><table id="log"></table>
-<h2>Нераспознанные донаты (ник не совпал с @username)</h2><table id="pend"></table>
+<h2>Нераспознанные донаты — нажми «Начислить игроку» и введи ник</h2><table id="pend"></table>
 <script>
 const KEY = location.search;
 async function load(){
@@ -178,13 +204,22 @@ async function load(){
     j.users.map(u => '<tr><td>'+u.name+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
   document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Приз</th></tr>' +
     j.wins.map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+w.prize+'</td></tr>').join('');
-  document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сумма</th><th>Время</th></tr>' +
-    (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+p.amount+' ₽</td><td>'+new Date(p.at).toLocaleTimeString()+'</td></tr>').join('') : '<tr><td colspan="3">пусто</td></tr>');
+  document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th>Время</th><th></th></tr>' +
+    (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td>'+new Date(p.at).toLocaleTimeString()+'</td><td><button onclick="assign('+p.id+')">Начислить игроку</button></td></tr>').join('') : '<tr><td colspan="5">пусто</td></tr>');
 }
 async function addSpins(){
   const r = await fetch('/api/admin/add-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ uname: document.getElementById('uname').value, count: parseInt(document.getElementById('cnt').value)||1 }) });
   const j = await r.json(); document.getElementById('msg').textContent = j.ok ? ' ✅' : ' ❌ ' + (j.error||'');
+  load();
+}
+async function assign(id){
+  const uname = prompt('Ник игрока в ТГ (без @):');
+  if (!uname) return;
+  const r = await fetch('/api/admin/assign-pending' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ id: id, uname: uname }) });
+  const j = await r.json();
+  if (!j.ok) alert('Ошибка: ' + (j.error || 'не найдено'));
   load();
 }
 load(); setInterval(load, 15000);
@@ -197,7 +232,7 @@ app.get('/api/admin/data', (req, res) => {
     ok: true,
     users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
     wins: winsLog.slice().reverse(),
-    pending: pendingDonations.slice(-50)
+    pending: pendingDonations.slice(-100)
   })
 })
 
@@ -210,6 +245,21 @@ app.post('/api/admin/add-spins', (req, res) => {
   if (!entry) return res.status(404).json({ ok: false, error: 'not_found', message: 'Игрок с таким именем не открывал рулетку' })
   entry.spins += count
   res.json({ ok: true, spins: entry.spins })
+})
+
+app.post('/api/admin/assign-pending', (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
+  const id = parseInt(req.body && req.body.id, 10)
+  const uname = norm(req.body && req.body.uname)
+  const entry = pendingDonations.find(p => p.id === id)
+  if (!entry) return res.status(404).json({ ok: false, error: 'donation_not_found' })
+  const user = Object.values(users).find(u => norm(u.username) === uname || norm(u.name) === uname)
+  if (!user) return res.status(404).json({ ok: false, error: 'user_not_found', message: 'Игрок с таким ником не открывал рулетку' })
+  const spins = Math.floor(entry.amount / RUB_PER_SPIN)
+  user.spins += spins
+  user.donated += entry.amount
+  pendingDonations.splice(pendingDonations.indexOf(entry), 1)
+  res.json({ ok: true, spins: user.spins, credited: spins })
 })
 
 // === DonationAlerts: подключение и приём донатов ===
@@ -278,30 +328,41 @@ async function pollDonations() {
     if (!r.ok) { console.log('[DA] ошибка опроса:', r.status); return }
     const j = await r.json()
     const list = j.data || []
+    const cutoff = Date.now() - 10 * 60 * 1000 // свежими считаем донаты за последние 10 минут
+
     if (!daFirstPollDone) {
-      for (const d of list) processedDonations.add(String(d.id))
+      for (const d of list) {
+        const t = new Date(d.created_at).getTime() || 0
+        if (t < cutoff) processedDonations.add(String(d.id))
+      }
       daFirstPollDone = true
-      console.log('[DA] подключен, старые донаты пропущены')
-      return
+      console.log('[DA] подключен: донаты старше 10 минут пропущены, свежие обработаем')
     }
+
     for (const d of list) {
       const id = String(d.id)
       if (processedDonations.has(id)) continue
       processedDonations.add(id)
-      const nick = norm(d.username || d.name)
+      const nick = d.username || d.name || ''
+      const message = d.message || ''
       const amount = parseFloat(d.amount_main || d.amount || 0)
-      if (!nick || amount <= 0) continue
-      const entry = Object.values(users).find(u => norm(u.username) === nick)
-      if (entry) {
+      if (amount <= 0) continue
+
+      const user = findUserByDonation(norm(nick), message)
+      if (user) {
         const spins = Math.floor(amount / RUB_PER_SPIN)
         if (spins > 0) {
-          entry.spins += spins
-          entry.donated += amount
-          console.log(`[DA] @${nick}: +${spins} круток (донат ${amount} ₽)`)
+          user.spins += spins
+          user.donated += amount
+          console.log(`[DA] @${user.username || user.name}: +${spins} круток (донат ${amount} ₽, имя доната: "${nick}")`)
+          notifyOwner(`💰 Донат ${amount} ₽ от «${nick}» → игрок @${user.username || user.name}: +${spins} круток`)
+        } else {
+          pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
         }
       } else {
-        pendingDonations.push({ nick, amount, at: Date.now() })
-        console.log(`[DA] донат без совпадения: ${nick} — ${amount} ₽ (начисли вручную в /admin)`)
+        pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
+        console.log(`[DA] донат без совпадения: ${nick || '(без имени)'} — ${amount} ₽ (назначь вручную в /admin)`)
+        notifyOwner(`⚠️ Донат ${amount} ₽ от «${nick || 'без имени'}» не распознан — назначь крутки в /admin`)
       }
     }
   } catch (e) {
