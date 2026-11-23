@@ -1,47 +1,87 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Крутить колесо</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body { background-color: #1a1a1a; color: white; font-family: sans-serif; text-align: center; padding-top: 50px; }
-    button { padding: 15px 40px; font-size: 20px; background-color: #F59E0B; color: black; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
-    #result { margin-top: 30px; font-size: 24px; color: #F59E0B; min-height: 30px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Золотая Удача</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: sans-serif; background: #1a120b; color: #f5e6c8; margin: 0; padding: 16px; text-align: center; }
+  h1 { color: #ffd700; margin: 12px 0; }
+  button { padding: 14px 40px; font-size: 18px; font-weight: bold; border: none; border-radius: 10px;
+           background: linear-gradient(#ffb700, #f59e0b); color: #1a120b; cursor: pointer; margin: 8px 4px; }
+  button:active { transform: scale(0.97); }
+  .donate { background: linear-gradient(#22c55e, #16a34a); color: #fff; text-decoration: none; display: inline-block;
+            padding: 14px 24px; border-radius: 10px; font-size: 17px; font-weight: bold; margin-top: 6px; }
+  #status { min-height: 48px; font-size: 17px; margin: 10px auto; max-width: 320px; color: #ffd700; }
+  .wheel { width: 90vw; max-width: 300px; margin: 6px auto; font-size: 15px; line-height: 1.4; }
+  .prizes { text-align: left; max-width: 320px; margin: 14px auto; background: #241a10; border-radius: 10px; padding: 10px 14px; }
+  .prizes h3 { color: #ffd700; margin: 4px 0 8px; text-align: center; }
+  .prizes li { margin: 5px 0; font-size: 15px; }
+</style>
 </head>
 <body>
-  <h1>Золотая Удача</h1>
-  <button id="spinBtn">Крутить!</button>
-  <div id="result"></div>
+<h1>🎰 Золотая Удача</h1>
+<div class="wheel" id="wheel">Готов крутиться!</div>
+<div id="status">100 ₽ доната = 1 крутка</div>
 
-  <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
+<button id="spin-btn" onclick="spin()">Крутить!</button>
 
-    document.getElementById('spinBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('result');
-      resultDiv.innerText = 'Крутим...';
-      
-      try {
-        const response = await fetch('/api/spin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ initData: tg.initData })
-        });
-        
-        const data = await response.json();
-        
-        if (data.ok) {
-          resultDiv.innerText = 'Вы выиграли: ' + data.prize.label;
-        } else {
-          resultDiv.innerText = 'Ошибка: ' + (data.message || data.error);
-        }
-      } catch (error) {
-        resultDiv.innerText = 'Ошибка соединения с сервером';
+<a class="donate" id="donate-btn" href="#" target="_blank">💎 Задонатить 100 ₽ = 1 крутка</a>
+
+<div class="prizes">
+  <h3>🎁 Что можно выиграть</h3>
+  <ol id="prize-list"><li>Загрузка...</li></ol>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp
+tg.ready()
+tg.expand()
+
+// ↓↓↓ ВСТАВЬ СЮДА ССЫЛКУ СО СВОЕЙ СТРАНИЦЫ ДОНАТА ↓↓↓
+const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026'
+
+document.getElementById('donate-btn').href = DONATE_URL
+
+let prizes = 
+
+async function loadPrizes() {
+  try {
+    const r = await fetch('/api/prizes')
+    const j = await r.json()
+    if (j.ok) {
+      prizes = j.prizes
+      document.getElementById('prize-list').innerHTML =
+        prizes.map(p => '<li>' + p.label + '</li>').join('')
+    }
+  } catch (e) {}
+}
+
+function spin() {
+  const btn = document.getElementById('spin-btn')
+  btn.disabled = true
+  document.getElementById('wheel').textContent = 'Крутим... 🎡'
+  document.getElementById('status').textContent = ''
+
+  fetch('/api/spin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData: tg.initData })
+  })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false
+      if (!data.ok) {
+        document.getElementById('wheel').textContent = '🎰'
+        document.getElementById('status').textContent = data.message || data.error || 'Ошибка'
+        return
       }
-    });
-  </script>
-</body>
-</html>
+      document.getElementById('wheel').textContent = '🏆 ' + data.prize.label + ' 🏆'
+      document.getElementById('status').textContent = 'Осталось круток: ' + data.spinsLeft
+      tg.showAlert('Выпало: ' + data.prize.label + '!\nОсталось круток: ' + data.spinsLeft)
+    })
+    .catch(() => {
+      btn.disabled = false
+      document.getElementById('wheel').textContent = '🎰'
+      document.getElementById('status').textContent
