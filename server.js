@@ -23,15 +23,28 @@ const SPINS_PER_DAY = parseInt(process.env.SPINS_PER_DAY || '1', 10)
 const userDailySpins = Object.create(null)
 
 /** Demo prize config. Weight = вероятность (чем больше, тем чаще выпадает). */
-let prizes = [
-  { label: '1 день VIP', weight: 10, color: '#F59E0B', id: 'vip1' },
-  { label: 'Ничего', weight: 30, color: '#9CA3AF', id: 'nothing' },
-  { label: 'Скидка 50%', weight: 15, color: '#10B981', id: 'disc50' },
-  { label: '100 ₽', weight: 10, color: '#3B82F6', id: 'r100' },
-  { label: 'Стикер-пак', weight: 15, color: '#EC4899', id: 'stickers' },
-  { label: 'Месяц PRO', weight: 5, color: '#8B5CF6', id: 'pro30' },
-  { label: '5% скидка', weight: 15, color: '#EF4444', id: 'disc5' }
+ let prizes = [
+  { label: 'Любая наживка 5 шт', weight: 15999, color: '#F59E0B', id: 'bait5' },
+  { label: 'Приманки на выбор', weight: 12000, color: '#10B981', id: 'bait_choice' },
+  { label: '1 бутылка алкоголя', weight: 12000, color: '#EF4444', id: 'alcohol' },
+  { label: 'Кофе 500', weight: 12000, color: '#D17722', id: 'coffee500' },
+  { label: 'Кофе 1000', weight: 7000, color: '#8B5CF6', id: 'coffee1000' },
+  { label: 'Золотая монета 1 шт', weight: 7000, color: '#EAB308', id: 'coin1' },
+  { label: 'Премиум 3 дня', weight: 7000, color: '#3B82F6', id: 'prem3' },
+  { label: 'Майка 10 шт', weight: 3000, color: '#EC4899', id: 'tshirt10' },
+  { label: 'Нос 10 шт', weight: 3000, color: '#64748B', id: 'nos10' },
+  { label: 'Бокоплав 10 шт', weight: 3000, color: '#06B6D4', id: 'bokoplav10' },
+  { label: 'Медведка 10 шт', weight: 3000, color: '#84CC16', id: 'medvedka10' },
+  { label: 'Дрейсена 10 шт', weight: 3000, color: '#0EA5E9', id: 'drayssena10' },
+  { label: 'Перловица 10 шт', weight: 3000, color: '#A855F7', id: 'perlovica10' },
+  { label: 'Сбитень 10 шт', weight: 3000, color: '#F97316', id: 'sbiten10' },
+  { label: 'Золотая монетка 2 шт', weight: 2000, color: '#FBBF24', id: 'coin2' },
+  { label: 'Премиум 7 дней', weight: 2000, color: '#6366F1', id: 'prem7' },
+  { label: 'Премиум 30 дней', weight: 2000, color: '#14B8A6', id: 'prem30' },
+  { label: 'Venga ll 10k', weight: 1, color: '#FFD700', id: 'venga10k' }
 ]
+
+
 
 // === Telegram initData verification ===
 /**
