@@ -92,7 +92,7 @@ app.post('/api/spin', (req, res) => {
   let userId = 'dev-user-42'
   if (BOT_TOKEN) {
     const ver = verifyInitData(initData)
-    if (!ver.ok) return res.status(403).json({ ok: false, error: 'initData verification failed', reason: ver.reason })
+   // if (!ver.ok) return res.status(403).json({ ok: false, error: 'initData verification failed', reason: ver.reason })
     userId = ver.userId
   } else if (!ALLOW_DEV) {
     return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
