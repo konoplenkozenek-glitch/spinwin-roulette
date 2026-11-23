@@ -15,24 +15,13 @@
     text-align: center;
     padding: 20px 12px 40px;
   }
-  h1 {
-    color: #FFD700;
-    font-size: 26px;
-    text-shadow: 0 0 14px rgba(255, 215, 0, .45);
-    margin-bottom: 6px;
-  }
+  h1 { color: #FFD700; font-size: 26px; text-shadow: 0 0 14px rgba(255,215,0,.45); margin-bottom: 6px; }
   .balance { font-size: 15px; color: #ffe9a8; margin-bottom: 14px; min-height: 20px; }
 
   .btn {
-    display: block;
-    max-width: 320px;
-    margin: 10px auto;
-    padding: 14px 18px;
-    border: none;
-    border-radius: 12px;
-    font-size: 17px;
-    font-weight: 700;
-    cursor: pointer;
+    display: block; max-width: 320px; margin: 10px auto;
+    padding: 14px 18px; border: none; border-radius: 12px;
+    font-size: 17px; font-weight: 700; cursor: pointer;
     transition: transform .1s, filter .2s;
   }
   .btn:active { transform: scale(.97); }
@@ -42,13 +31,9 @@
   .btn-donate small { display: block; font-weight: 400; font-size: 12px; margin-top: 3px; }
 
   .howto {
-    max-width: 420px;
-    margin: 16px auto;
-    padding: 14px;
-    text-align: left;
-    background: #1c1408;
-    border: 1px solid #FFD700;
-    border-radius: 14px;
+    max-width: 420px; margin: 16px auto; padding: 14px;
+    text-align: left; background: #1c1408;
+    border: 1px solid #FFD700; border-radius: 14px;
   }
   .howto h3 { color: #FFD700; font-size: 16px; margin-bottom: 8px; }
   .howto ol { padding-left: 18px; }
@@ -56,25 +41,16 @@
   .howto .note { margin-top: 10px; color: #FFB84D; font-size: 12.5px; line-height: 1.4; }
 
   .prizes {
-    max-width: 420px;
-    margin: 18px auto;
-    padding: 14px;
-    text-align: left;
-    background: rgba(40, 26, 10, .55);
-    border: 1px solid #5a4318;
-    border-radius: 14px;
+    max-width: 420px; margin: 18px auto; padding: 14px;
+    text-align: left; background: rgba(40,26,10,.55);
+    border: 1px solid #5a4318; border-radius: 14px;
   }
   .prizes h3 { color: #FFD700; font-size: 15px; margin-bottom: 8px; text-align: center; }
   .prizes li { font-size: 14px; line-height: 1.6; list-style: none; }
 
   .result {
-    max-width: 420px;
-    margin: 14px auto;
-    padding: 14px;
-    border-radius: 14px;
-    font-size: 16px;
-    line-height: 1.5;
-    display: none;
+    max-width: 420px; margin: 14px auto; padding: 14px;
+    border-radius: 14px; font-size: 16px; line-height: 1.5; display: none;
   }
   .result.win  { display: block; background: #12331c; border: 1px solid #3ddc84; color: #c8f7d8; }
   .result.fail { display: block; background: #3a1414; border: 1px solid #ef4444; color: #f7d1d1; }
@@ -85,7 +61,7 @@
 <body>
 
   <h1>🎰 Золотая Удача</h1>
-  <div class="balance" id="balance">Загружаем…</div>
+  <div class="balance" id="balance">Загружаем… попытка 1/5</div>
 
   <div class="wheel" id="wheel">🎁</div>
 
@@ -94,7 +70,7 @@
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
     💸 Задонать 100 ₽ = 1 крутка
-    <small>в сообщении к донату укажи свой @ник из Telegram</small>
+    <small>в сообщении к донату укажи @ник из ТГ и игровой ник</small>
   </a>
 
   <div class="howto">
@@ -102,10 +78,10 @@
     <ol>
       <li>Открой рулетку и нажми «Крутить!» — так ты регистрируешься.</li>
       <li>Донат: 100 ₽ = 1 крутка.</li>
-      <li><b>Самое главное:</b> в сообщении к донату напиши свой <b>@ник из Telegram</b> — по нему крутки найдут тебя!</li>
+      <li><b>Самое главное:</b> в сообщении к донату напиши <b>@ник из Telegram</b> <b>и свой игровой ник</b> — например: <code>@Alina20061995 AlinaGame</code>. По нику ТГ крутки найдут тебя, по игровому нику админ выдаст приз!</li>
       <li>Крутки придут автоматически за 1–2 минуты.</li>
     </ol>
-    <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно ник из Telegram в сообщении доната.</p>
+    <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно ник Telegram <b>и игровой ник</b> в сообщении доната.</p>
   </div>
 
   <div class="prizes">
@@ -115,7 +91,7 @@
 
 <script>
 // ⚙️ ЗАМЕНИ на свою ссылку доната с DonationAlerts
-const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
+const DONATE_URL = 'https://www.donationalerts.com/r/ТВОЙ_НИК';
 
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -130,6 +106,7 @@ document.getElementById('donateBtn').href = DONATE_URL;
 
 const faces = ['🎁', '💎', '🍀', '⭐', '🔥', '🎩', '🥇', '💰'];
 let spinAnim = null;
+let gameNickSaved = localStorage.getItem('gameNick') || '';
 
 async function loadPrizes() {
   try {
@@ -140,6 +117,42 @@ async function loadPrizes() {
         j.prizes.map((p, i) => `<li style="color:${p.color}">${i + 1}. ${p.label}</li>`).join('');
     }
   } catch (e) { /* список не критичен */ }
+}
+
+// Загрузка баланса со счётчиком попыток
+async function loadBalance() {
+  const MAX_TRIES = 5;
+  for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+    elBalance.textContent = `Загружаем… попытка ${attempt}/${MAX_TRIES}`;
+    try {
+      const r = await fetch('/api/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData || '', gameNick: gameNickSaved })
+      });
+      const j = await r.json();
+      if (j.ok) {
+        // Спрашиваем игровой ник один раз (если ещё не сохранён)
+        if (!j.gameNick && !gameNickSaved) {
+          const nick = prompt('Введи свой игровой ник (для выдачи призов).\nМожно пропустить — нажми «Отмена».', '');
+          if (nick && nick.trim()) {
+            gameNickSaved = nick.trim();
+            localStorage.setItem('gameNick', gameNickSaved);
+            // Повторный запрос — чтобы ник сохранился на сервере
+            await fetch('/api/me', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ initData: tg.initData || '', gameNick: gameNickSaved })
+            });
+          }
+        }
+        elBalance.textContent = `Привет, ${j.name}! Круток: ${j.spins}` + (gameNickSaved ? ` | игровой ник: ${gameNickSaved}` : '');
+        return;
+      }
+    } catch (e) { /* пробуем ещё раз */ }
+    if (attempt < MAX_TRIES) await new Promise(r => setTimeout(r, 1500));
+  }
+  elBalance.textContent = '⚠️ Сервер не отвечает. Нажми «Крутить!» — он проснётся и загрузится.';
 }
 
 async function spin() {
@@ -167,11 +180,10 @@ async function spin() {
       elWheel.textContent = '🎉';
       elResult.className = 'result win';
       elResult.innerHTML = `🎁 Выпало: <b>${j.prize.label}</b><br>Круток осталось: <b>${j.spinsLeft}</b><br><small>Скриншот этого окна отправь администратору для получения приза!</small>`;
-      elBalance.textContent = `Круток осталось: ${j.spinsLeft}`;
     } else if (j.error === 'no_spins') {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
-      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь написать свой @ник в сообщении доната!'}`;
+      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь написать @ник из ТГ и игровой ник в сообщении доната!'}`;
     } else {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
@@ -185,10 +197,12 @@ async function spin() {
   } finally {
     elSpinBtn.disabled = false;
     elResult.style.display = 'block';
+    loadBalance();
   }
 }
 
 loadPrizes();
+loadBalance();
 </script>
 
 </body>
