@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Крутить колесо</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { background-color: #1a1a1a; color: white; font-family: sans-serif; text-align: center; padding-top: 50px; }
+    button { padding: 15px 40px; font-size: 20px; background-color: #F59E0B; color: black; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+    #result { margin-top: 30px; font-size: 24px; color: #F59E0B; min-height: 30px; }
+  </style>
+</head>
+<body>
+  <h1>Золотая Удача</h1>
+  <button id="spinBtn">Крутить!</button>
+  <div id="result"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    document.getElementById('spinBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerText = 'Крутим...';
+      
+      try {
+        const response = await fetch('/api/spin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: tg.initData })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+          resultDiv.innerText = 'Вы выиграли: ' + data.prize.label;
+        } else {
+          resultDiv.innerText = 'Ошибка: ' + (data.message || data.error);
+        }
+      } catch (error) {
+        resultDiv.innerText = 'Ошибка соединения с сервером';
+      }
+    });
+  </script>
+</body>
+</html>
