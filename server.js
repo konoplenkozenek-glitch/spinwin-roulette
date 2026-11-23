@@ -17,16 +17,16 @@ const BOT_TOKEN = process.env.BOT_TOKEN || ''
 const ALLOW_DEV = (process.env.ALLOW_DEV || 'true').toLowerCase() === 'true'
 const ADMIN_KEY = process.env.ADMIN_KEY || 'change-me'
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || ''
-const RUB_PER_SPIN = parseFloat(process.env.RUB_PER_SPIN || '100') // рублей доната за 1 крутку
+const RUB_PER_SPIN = parseFloat(process.env.RUB_PER_SPIN || '100')
 const DA_CLIENT_ID = process.env.DA_CLIENT_ID || ''
 const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
 const DA_REDIRECT_URI = process.env.DA_REDIRECT_URI || `${PUBLIC_URL}/da/callback`
 
 // === Storage (в памяти, сбрасывается при перезапуске) ===
-const users = Object.create(null)     // tgId -> { name, username, spins, donated }
-const winsLog = []                    // журнал: { tgName, prize, at }
-const pendingDonations = []           // донаты без совпадения по нику
+const users = Object.create(null)
+const winsLog = []
+const pendingDonations = []
 const processedDonations = new Set()
 let daFirstPollDone = false
 let daTokens = { access_token: null, refresh_token: null, expires_at: 0 }
@@ -124,20 +124,19 @@ app.post('/api/spin', (req, res) => {
 
   let tgUser = null
 
-if (BOT_TOKEN && !ALLOW_DEV) {
-  const ver = verifyInitData(req.body && req.body.initData)
-  if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
-  tgUser = ver
-} else if (BOT_TOKEN && ALLOW_DEV) {
-  // DEV-режим: пробуем проверить initData, если не вышло — работаем как dev-пользователь
-  const ver = verifyInitData(req.body && req.body.initData)
-  tgUser = ver || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
-} else if (!ALLOW_DEV) {
-  return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
-} else {
-  tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
-}
-
+  if (BOT_TOKEN && !ALLOW_DEV) {
+    const ver = verifyInitData(req.body && req.body.initData)
+    if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
+    tgUser = ver
+  } else if (BOT_TOKEN && ALLOW_DEV) {
+    // DEV-режим: пробуем проверить initData, если не вышло — работаем как dev-пользователь
+    const ver = verifyInitData(req.body && req.body.initData)
+    tgUser = ver || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+  } else if (!ALLOW_DEV) {
+    return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
+  } else {
+    tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+  }
 
   const tgId = String(tgUser.id)
   const user = getUser(tgId, tgUser)
