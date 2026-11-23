@@ -122,13 +122,22 @@ app.post('/api/spin', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Server not configured: BOT_TOKEN is required' })
   }
 
-  let tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
-  if (BOT_TOKEN) {
-    const ver = verifyInitData(req.body && req.body.initData)
-    if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
-    tgUser = ver
-  } else if (!ALLOW_DEV) {
-    return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
+  let tgUser = null
+
+if (BOT_TOKEN && !ALLOW_DEV) {
+  const ver = verifyInitData(req.body && req.body.initData)
+  if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
+  tgUser = ver
+} else if (BOT_TOKEN && ALLOW_DEV) {
+  // DEV-режим: пробуем проверить initData, если не вышло — работаем как dev-пользователь
+  const ver = verifyInitData(req.body && req.body.initData)
+  tgUser = ver || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+} else if (!ALLOW_DEV) {
+  return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
+} else {
+  tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+}
+
   }
 
   const tgId = String(tgUser.id)
