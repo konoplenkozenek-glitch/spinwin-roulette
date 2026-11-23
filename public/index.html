@@ -38,6 +38,11 @@
   .howto h3 { color: #FFD700; font-size: 16px; margin-bottom: 8px; }
   .howto ol { padding-left: 18px; }
   .howto li { font-size: 14px; line-height: 1.45; margin: 6px 0; }
+  .howto .main-rule {
+    margin: 10px 0 8px; padding: 10px;
+    background: #3a2400; border: 1px dashed #FFD700; border-radius: 10px;
+    font-size: 15px; font-weight: 700; color: #FFD700; line-height: 1.5;
+  }
   .howto .note { margin-top: 10px; color: #FFB84D; font-size: 12.5px; line-height: 1.4; }
 
   .prizes {
@@ -70,7 +75,7 @@
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
     💸 Задонать 100 ₽ = 1 крутка
-    <small>в сообщении к донату оставь свой @ник из Telegram</small>
+    <small>в сообщении к донату напиши свой @ник из Telegram</small>
   </a>
 
   <div class="howto">
@@ -78,7 +83,10 @@
     <ol>
       <li>Открой рулетку и нажми «Крутить!» — так ты регистрируешься (при заходе введи свой игровой ник).</li>
       <li>Донат: 100 ₽ = 1 крутка.</li>
-      <li><b>Самое главное:</b> в сообщении к донату оставь свой <b>@ник из Telegram</b> — по нему крутки найдут тебя. Игровой ник вводится при входе в рулетку, в донате он не нужен.</li>
+    </ol>
+    <div class="main-rule">❗ САМОЕ ГЛАВНОЕ: в сообщении к донату напиши свой ПРАВИЛЬНЫЙ ник из Telegram (@ник). Без ника, или с ошибкой в нике — крутки НЕ ЗАСЧИТАЮТСЯ автоматически!</div>
+    <div class="main-rule">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку — крутки зачислятся на баланс.</div>
+    <ol start="3">
       <li>Крутки придут автоматически за 1–2 минуты.</li>
     </ol>
     <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно <b>@ник из Telegram</b> в сообщении доната.</p>
@@ -183,7 +191,7 @@ async function spin() {
     } else if (j.error === 'no_spins') {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
-      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь оставить свой @ник из Telegram в сообщении доната!'}`;
+      elResult.innerHTML = `😕 Круток нет.<br>${j.message || 'Задонать 100 ₽ = 1 крутка — и не забудь написать свой @ник из Telegram в сообщении доната!'}`;
     } else {
       elWheel.textContent = '🎰';
       elResult.className = 'result fail';
