@@ -86,7 +86,7 @@ let prizes = [
   { label: 'Сбитень 10 шт', weight: 3000, color: '#F97316', id: 'sbiten10' },
   { label: 'Золотая монетка 2 шт', weight: 2000, color: '#FBBF24', id: 'coin2' },
   { label: 'Премиум 7 дней', weight: 2000, color: '#6366F1', id: 'prem7' },
-  { label: 'Премиум 30 дней', weight: 2000, color: '#14B8A6', id: 'prem30' },
+  { label: 'Премиум 30 дней', weight: 1000, color: '#14B8A6', id: 'prem30' },
   { label: 'Venga ll 10k', weight: 1, color: '#FFD700', id: 'venga10k' }
 ]
 
