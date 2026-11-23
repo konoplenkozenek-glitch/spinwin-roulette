@@ -11,6 +11,7 @@
   button { padding: 14px 40px; font-size: 18px; font-weight: bold; border: none; border-radius: 10px;
            background: linear-gradient(#ffb700, #f59e0b); color: #1a120b; cursor: pointer; margin: 8px 4px; }
   button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.5; }
   .donate { background: linear-gradient(#22c55e, #16a34a); color: #fff; text-decoration: none; display: inline-block;
             padding: 14px 24px; border-radius: 10px; font-size: 17px; font-weight: bold; margin-top: 6px; }
   #status { min-height: 48px; font-size: 17px; margin: 10px auto; max-width: 320px; color: #ffd700; }
@@ -21,6 +22,7 @@
 </style>
 </head>
 <body>
+
 <h1>🎰 Золотая Удача</h1>
 <div class="wheel" id="wheel">Готов крутиться!</div>
 <div id="status">100 ₽ доната = 1 крутка</div>
@@ -39,49 +41,66 @@ const tg = window.Telegram.WebApp
 tg.ready()
 tg.expand()
 
-// ↓↓↓ ВСТАВЬ СЮДА ССЫЛКУ СО СВОЕЙ СТРАНИЦЫ ДОНАТА ↓↓↓
-const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026'
-
+const DONATE_URL = 'https://www.donationalerts.com/r/evgeny_2026'
 document.getElementById('donate-btn').href = DONATE_URL
 
-let prizes = [] 
-
+// === Загрузка списка призов ===
 async function loadPrizes() {
+  const list = document.getElementById('prize-list')
+  if (!list) return
   try {
     const r = await fetch('/api/prizes')
-    const j = await r.json()
-    if (j.ok) {
-      prizes = j.prizes
-      document.getElementById('prize-list').innerHTML =
-        prizes.map(p => '<li>' + p.label + '</li>').join('')
-    }
-  } catch (e) {}
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const data = await r.json()
+    if (!data.ok || !Array.isArray(data.prizes)) throw new Error('bad response')
+    if (data.prizes.length === 0) throw new Error('empty list')
+    list.innerHTML = ''
+    data.prizes.forEach(function (p) {
+      const li = document.createElement('li')
+      li.textContent = p.label
+      if (p.color) li.style.color = p.color
+      list.appendChild(li)
+    })
+  } catch (e) {
+    console.error('loadPrizes error:', e)
+    list.innerHTML = '<li style="color:#ff6b6b">Не удалось загрузить список. Перезагрузи мини-апп.</li>'
+  }
 }
 
+// === Прокрутка рулетки ===
 function spin() {
   const btn = document.getElementById('spin-btn')
+  const wheel = document.getElementById('wheel')
+  const status = document.getElementById('status')
   btn.disabled = true
-  document.getElementById('wheel').textContent = 'Крутим... 🎡'
-  document.getElementById('status').textContent = ''
+  wheel.textContent = 'Крутим... 🎡'
+  status.textContent = ''
 
   fetch('/api/spin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ initData: tg.initData })
   })
-    .then(r => r.json())
-    .then(data => {
+    .then(function (r) { return r.json() })
+    .then(function (data) {
       btn.disabled = false
       if (!data.ok) {
-        document.getElementById('wheel').textContent = '🎰'
-        document.getElementById('status').textContent = data.message || data.error || 'Ошибка'
+        wheel.textContent = '🎰'
+        status.textContent = data.message || data.error || 'Ошибка'
         return
       }
-      document.getElementById('wheel').textContent = '🏆 ' + data.prize.label + ' 🏆'
-      document.getElementById('status').textContent = 'Осталось круток: ' + data.spinsLeft
+      wheel.textContent = '🏆 ' + data.prize.label + ' 🏆'
+      status.textContent = 'Осталось круток: ' + data.spinsLeft
       tg.showAlert('Выпало: ' + data.prize.label + '!\nОсталось круток: ' + data.spinsLeft)
     })
-    .catch(() => {
+    .catch(function () {
       btn.disabled = false
-      document.getElementById('wheel').textContent = '🎰'
-      document.getElementById('status').textContent
+      wheel.textContent = '🎰'
+      status.textContent = 'Ошибка соединения'
+    })
+}
+
+loadPrizes()
+</script>
+</body>
+</html>
