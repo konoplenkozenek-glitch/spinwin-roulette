@@ -138,7 +138,6 @@ if (BOT_TOKEN && !ALLOW_DEV) {
   tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
 }
 
-  }
 
   const tgId = String(tgUser.id)
   const user = getUser(tgId, tgUser)
