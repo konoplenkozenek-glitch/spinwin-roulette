@@ -50,6 +50,18 @@
   .btn-donate { background: linear-gradient(#3ddc84, #1faa5a); color: #04310f; text-decoration: none; }
   .btn-donate small { display: block; font-weight: 400; font-size: 12px; margin-top: 3px; }
 
+  /* Кнопка смены ника — отдельный аккуратный ряд */
+  .btn-row { max-width: 320px; margin: 6px auto 0; }
+  .btn-nick {
+    display: block; width: 100%;
+    padding: 10px 14px; border: 1px solid #8a6d2b; border-radius: 12px;
+    background: rgba(255, 215, 0, .08); color: #ffe9a8;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: transform .1s, background .2s;
+  }
+  .btn-nick:active { transform: scale(.97); }
+  .btn-nick:hover { background: rgba(255, 215, 0, .15); }
+
   .howto {
     max-width: 420px; margin: 16px auto; padding: 14px;
     text-align: left; background: #1c1408;
@@ -93,6 +105,11 @@
   <div class="result" id="result"></div>
 
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
+
+  <div class="btn-row">
+    <button class="btn-nick" onclick="changeNick()">✏️ Сменить игровой ник</button>
+  </div>
+
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
     💸 Задонать 100 ₽ = 1 прокрутка
     <small>в сообщении к донату напиши свой @ник из Telegram</small>
@@ -108,6 +125,7 @@
     <div class="main-rule">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку — прокрутки зачислятся на баланс.</div>
     <ol start="3">
       <li>Прокрутки придут автоматически за 1–2 минуты.</li>
+      <li>Ошибся в игровом нике? Нажми «Сменить игровой ник» под кнопкой «Крутить!».</li>
     </ol>
     <p class="note">⚠️ Имя карты или банка в платёжке <b>не считается</b> — нужен именно <b>@ник из Telegram</b> в сообщении доната.</p>
   </div>
@@ -119,7 +137,7 @@
 
 <script>
 // ⚙️ ЗАМЕНИ на свою ссылку доната с DonationAlerts
-const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
+const DONATE_URL = 'https://www.donationalerts.com/r/ТВОЙ_НИК';
 
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -181,6 +199,34 @@ async function loadBalance() {
     if (attempt < MAX_TRIES) await new Promise(r => setTimeout(r, 1500));
   }
   elBalance.textContent = '⚠️ Сервер не отвечает. Нажми «Крутить!» — он проснётся и загрузится.';
+}
+
+// Смена игрового ника по кнопке
+async function changeNick() {
+  const nick = prompt('Введи НОВЫЙ игровой ник (для выдачи призов).\nНажми «Отмена», чтобы ничего не менять.', gameNickSaved || '');
+  if (nick === null) return; // отмена — ничего не делаем
+  const trimmed = nick.trim();
+  if (!trimmed) {
+    alert('Ник не может быть пустым. Ничего не изменилось.');
+    return;
+  }
+  if (trimmed === gameNickSaved) {
+    alert('Это твой текущий ник. Ничего не изменилось.');
+    return;
+  }
+  gameNickSaved = trimmed;
+  localStorage.setItem('gameNick', gameNickSaved);
+  try {
+    await fetch('/api/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: tg.initData || '', gameNick: gameNickSaved })
+    });
+    alert(`Игровой ник обновлён: ${gameNickSaved}`);
+  } catch (e) {
+    alert('Ник сохранён локально, но сервер не ответил. Открой рулетку заново — ник подтянется.');
+  }
+  loadBalance();
 }
 
 async function spin() {
