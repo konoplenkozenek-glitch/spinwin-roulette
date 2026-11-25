@@ -18,6 +18,7 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || ''; // чат группы для уведомлений админу
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
@@ -136,6 +137,8 @@ async function grantGoalBonus(u) {
     await saveUser(u);
     sendTelegramMessage(u.chat_id,
       `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
+    sendTelegramMessage(GROUP_CHAT_ID,
+      `🎉 <b>${u.username || u.telegram_id}</b> закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
     return true;
   }
   return false;
@@ -202,7 +205,16 @@ app.post('/api/spin', async (req, res) => {
 
   // случайный приз из списка
   const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
-  console.log('Взрыв: игрок ' + u.telegram_id + ' -> ' + prize.name);
+  const name = u.game_nick || u.username || ('id' + u.telegram_id);
+  console.log('Взрыв: игрок ' + name + ' (' + u.telegram_id + ') -> ' + prize.name);
+
+  // уведомление игроку в личку (если бот знает его чат)
+  sendTelegramMessage(u.chat_id,
+    `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
+  // уведомление в группу админа
+  sendTelegramMessage(GROUP_CHAT_ID,
+    `🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
+    (u.game_nick ? `\nНик в игре: ${u.game_nick}` : ''));
 
   res.json({ ok: true, spinsLeft: u.spins, prize: prize });
 });
@@ -225,6 +237,7 @@ app.post('/api/redeem-promo', async (req, res) => {
   u.spins = Number(u.spins) + (promo.spins || 1);
   await saveUser(u);
 
+  sendTelegramMessage(u.chat_id, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -362,6 +375,14 @@ async function pollBotUpdates() {
   try {
     const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${tgOffset}&timeout=0`);
     const j = await r.json();
+    if (!j.ok) {
+      // 409 — у бота стоит webhook, getUpdates недоступен
+      if (j.error_code === 409 && !pollBotUpdates._warned) {
+        pollBotUpdates._warned = true;
+        console.log('TG: у бота активен webhook, getUpdates не работает — chat_id собираются только из группы');
+      }
+      return;
+    }
     for (const upd of (j.result || [])) {
       if (upd.update_id >= tgOffset) tgOffset = upd.update_id + 1;
       const msg = upd.message;
@@ -414,6 +435,7 @@ async function pollDonations() {
       const amount = parseFloat(d.amount) || 0;
       const message = d.message || '';
       const username = d.username || '';
+      console.log('DA: новый донат ' + amount + ' ₽ от ' + (username || '?') + ' — сообщение: "' + message + '"');
 
       // ищем игрока по @нику в сообщении или по username
       let user = null;
@@ -440,13 +462,19 @@ async function pollDonations() {
           telegram_id: String(user.telegram_id),
           spins_added: spins, recognized: 1, ts: Date.now()
         });
+        console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
         sendTelegramMessage(user.chat_id,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
+        sendTelegramMessage(GROUP_CHAT_ID,
+          `💰 Донат ${amount} ₽ от <b>${user.username || user.telegram_id}</b> — зачислено ${spins} взрывов.`);
       } else {
         await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
           telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
         });
+        console.log('DA: донат НЕ распознан (ник не найден или сумма < 100)');
+        sendTelegramMessage(GROUP_CHAT_ID,
+          `⚠️ Донат ${amount} ₽ не распознан. Сообщение: «${message || '—'}», username: ${username || '—'}. Зачисли вручную в админке.`);
       }
     }
   } catch (e) { /* повторим на следующем опросе */ }
@@ -611,7 +639,6 @@ async function generatePromo(){
   const j = await r.json();
   if (j.ok) {
     toast('Код: ' + j.code);
-    try { document.execCommand('copy'); } catch(e){}
     navigator.clipboard && navigator.clipboard.writeText(j.code);
   }
   load();
