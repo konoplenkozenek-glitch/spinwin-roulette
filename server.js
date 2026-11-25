@@ -2,11 +2,17 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// папка public может лежать рядом с server.js или на уровень выше
+const PUB = fs.existsSync(path.join(__dirname, 'public'))
+  ? path.join(__dirname, 'public')
+  : path.join(__dirname, '..', 'public');
+app.use(express.static(PUB));
 
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -17,7 +23,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ====== НАСТРОЙКИ ПАКЕТОВ И ЦЕЛИ ======
+// ====== НАСТРОЙКИ ======
 const PROGRESS_GOAL = 10000;   // цель прогресс-бара, ₽
 const GOAL_BONUS_SPINS = 5;    // сколько взрывов за достижение цели
 
@@ -25,6 +31,28 @@ const PACKAGES = [
   { amount: 100,  spins: 1 },
   { amount: 300,  spins: 4 },
   { amount: 1000, spins: 13 }
+];
+
+// ====== СПИСОК НАГРАД (выпадает при взрыве) ======
+const PRIZES = [
+  { name: 'Любая наживка 5 шт',  color: '#ffcf40' },
+  { name: 'Приманки на выбор',   color: '#4caf50' },
+  { name: '1 бутылка алкоголя',  color: '#ef4444' },
+  { name: 'Кофе 500',            color: '#d2a24c' },
+  { name: 'Кофе 1000',           color: '#b78cff' },
+  { name: 'Золотая монета 1 шт', color: '#ffa726' },
+  { name: 'Премиум 3 дня',       color: '#4db8ff' },
+  { name: 'Майка 10 шт',         color: '#ff6ec7' },
+  { name: 'Нос 10 шт',           color: '#9e9e9e' },
+  { name: 'Бокоплав 10 шт',      color: '#7ec84a' },
+  { name: 'Медведка 10 шт',      color: '#7ec84a' },
+  { name: 'Дрейсена 10 шт',      color: '#4db8ff' },
+  { name: 'Перловица 10 шт',     color: '#b78cff' },
+  { name: 'Сбитень 10 шт',       color: '#ff7043' },
+  { name: 'Золотая монетка 2 шт', color: '#ffd54f' },
+  { name: 'Премиум 7 дней',      color: '#4db8ff' },
+  { name: 'Премиум 30 дней',     color: '#4caf50' },
+  { name: 'Venga II 10k',        color: '#ffd54f' }
 ];
 // ======================================
 
@@ -85,7 +113,7 @@ async function saveUser(u) {
   }).eq('telegram_id', String(u.telegram_id));
 }
 
-// Сумма доната -> крутки (по пакетам, снизу вверх)
+// Сумма доната -> взрывы (по пакетам, снизу вверх)
 function spinsForAmount(amount) {
   let remaining = amount;
   let total = 0;
@@ -114,14 +142,22 @@ async function grantGoalBonus(u) {
 }
 
 async function sendTelegramMessage(chatId, text) {
-  if (!BOT_TOKEN || !chatId) return;
+  if (!BOT_TOKEN || !chatId) return false;
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
     });
-  } catch (e) { /* игнорируем */ }
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+function randomPromoCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return 'LUCK-' + s;
 }
 
 // ====== API МИНИ-АППА ======
@@ -164,7 +200,11 @@ app.post('/api/spin', async (req, res) => {
   u.spins = Number(u.spins) - 1;
   await saveUser(u);
 
-  res.json({ ok: true, spinsLeft: u.spins });
+  // случайный приз из списка
+  const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
+  console.log('Взрыв: игрок ' + u.telegram_id + ' -> ' + prize.name);
+
+  res.json({ ok: true, spinsLeft: u.spins, prize: prize });
 });
 
 app.post('/api/redeem-promo', async (req, res) => {
@@ -218,13 +258,26 @@ app.get('/api/admin/data', async (req, res) => {
     ok: true,
     users: (users || []).map(u => ({
       telegram_id: u.telegram_id, username: u.username, game_nick: u.game_nick,
-      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus
+      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus, chat_id: u.chat_id
     })),
     unrecognized: unrecognized || [],
     lastDonation: (lastDonation && lastDonation[0]) || null,
     promos: promos || [],
     totalDonated
   });
+});
+
+// корректировка игрока: взрывы, донат, ник в игре
+app.post('/api/admin/update-user', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const u = await getUser(req.body.telegramId);
+  if (!u) return res.json({ ok: false, error: 'no_user' });
+
+  if (req.body.spins !== undefined && req.body.spins !== '') u.spins = parseInt(req.body.spins, 10) || 0;
+  if (req.body.donated !== undefined && req.body.donated !== '') u.donated = parseInt(req.body.donated, 10) || 0;
+  if (req.body.gameNick) u.game_nick = String(req.body.gameNick).slice(0, 40);
+  await saveUser(u);
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/add-spins', async (req, res) => {
@@ -236,13 +289,29 @@ app.post('/api/admin/add-spins', async (req, res) => {
   res.json({ ok: true, spins: u.spins });
 });
 
+// генерация промокода со случайным кодом
+app.post('/api/admin/generate-promo', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const spins = parseInt(req.body.spins, 10) || 1;
+  const code = randomPromoCode();
+  const { error } = await supabase.from('promos').insert({ code, spins });
+  res.json({ ok: !error, code: code });
+});
+
 app.post('/api/admin/create-promo', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const code = String(req.body.code || '').trim().toUpperCase().slice(0, 12);
+  const code = String(req.body.code || '').trim().toUpperCase().slice(0, 24);
   if (!code) return res.json({ ok: false });
   const spins = parseInt(req.body.spins, 10) || 1;
   const { error } = await supabase.from('promos').insert({ code, spins });
   res.json({ ok: !error, error: error ? 'exists' : undefined });
+});
+
+app.post('/api/admin/delete-promo', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const code = String(req.body.code || '').trim().toUpperCase();
+  await supabase.from('promos').delete().eq('code', code);
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/resolve-donation', async (req, res) => {
@@ -269,11 +338,46 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
   res.json({ ok: true, spins });
 });
 
-app.get('/api/admin/test-spins', (req, res) => {
+// рассылка всем игрокам, у кого известен chat_id
+app.post('/api/admin/broadcast', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const samples = [100, 300, 500, 1000, 1300, 2000, 10000];
-  res.json({ ok: true, packages: PACKAGES, samples: samples.map(a => ({ amount: a, spins: spinsForAmount(a) })) });
+  const text = String(req.body.text || '').trim();
+  if (!text) return res.json({ ok: false });
+
+  const { data: users } = await supabase
+    .from('users').select('chat_id').not('chat_id', 'is', null);
+  let sent = 0;
+  for (const u of (users || [])) {
+    const ok = await sendTelegramMessage(u.chat_id, text);
+    if (ok) sent++;
+    await new Promise(r => setTimeout(r, 100)); // не долбить API
+  }
+  res.json({ ok: true, sent });
 });
+
+// ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
+let tgOffset = 0;
+async function pollBotUpdates() {
+  if (!BOT_TOKEN) return;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${tgOffset}&timeout=0`);
+    const j = await r.json();
+    for (const upd of (j.result || [])) {
+      if (upd.update_id >= tgOffset) tgOffset = upd.update_id + 1;
+      const msg = upd.message;
+      if (msg && msg.from && msg.chat) {
+        const u = await getUser(msg.from.id);
+        if (u && String(u.chat_id || '') !== String(msg.chat.id)) {
+          await supabase.from('users')
+            .update({ chat_id: String(msg.chat.id) })
+            .eq('telegram_id', String(msg.from.id));
+        }
+      }
+    }
+  } catch (e) { /* повторим позже */ }
+}
+setInterval(pollBotUpdates, 15000);
+pollBotUpdates();
 
 // ====== ПОЛУЧЕНИЕ ДОНАТОВ С DONATIONALERTS ======
 async function pollDonations() {
@@ -358,13 +462,15 @@ function getAdminHtml() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Админка — Золотая Удача</title>
 <style>
-body{font-family:sans-serif;background:#111;color:#eee;padding:16px;max-width:900px;margin:0 auto}
+body{font-family:sans-serif;background:#111;color:#eee;padding:16px;max-width:960px;margin:0 auto}
 h1{color:#FFD700;font-size:20px}
-h2{color:#FFD700;font-size:16px;margin-top:20px}
+h2{color:#FFD700;font-size:15px;margin-top:18px}
 table{width:100%;border-collapse:collapse;font-size:13px}
-td,th{border:1px solid #333;padding:6px 8px;text-align:left}
+td,th{border:1px solid #333;padding:5px 7px;text-align:left}
 th{background:#222;color:#FFD700}
 button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-weight:bold;cursor:pointer}
+button.gray{background:#555;color:#fff}
+input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius:6px;padding:6px}
 .muted{color:#888;font-size:12px}
 .progress-wrap{margin:14px 0 4px}
 .progress-bar{height:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.4);border-radius:10px;overflow:hidden}
@@ -372,6 +478,8 @@ button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-we
 .progress-fill.done{background:linear-gradient(90deg,#3ddc84,#aef7cf)}
 .progress-label{font-size:12px;color:#b8a878;margin-top:5px}
 .progress-label.done{color:#3ddc84;font-weight:bold}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#FFD700;color:#000;padding:8px 16px;border-radius:10px;font-weight:bold;display:none;z-index:9}
 </style></head><body>
 <h1>🛠 Админка — Золотая Удача</h1>
 <div class="muted" id="stats"></div>
@@ -383,20 +491,36 @@ button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-we
 
 <h2>💵 Последний донат</h2><div id="lastDonation">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
-<h2>👥 Игроки</h2><div id="users">—</div>
+<h2>👥 Игроки</h2>
+<div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
+<div id="users">—</div>
 <h2>🎟 Промокоды</h2>
-<div><input id="promoCode" placeholder="КОД" style="padding:6px;width:120px">
-<input id="promoSpins" placeholder="взрывов" type="number" value="1" style="padding:6px;width:70px">
-<button onclick="createPromo()">Создать</button></div><br>
+<div class="row">
+  <input id="promoCode" placeholder="КОД (или сгенерируй)" style="width:180px">
+  <input id="promoSpins" placeholder="взрывов" type="number" value="1" style="width:70px">
+  <button onclick="createPromo()">Создать</button>
+  <button onclick="generatePromo()">🎲 Сгенерировать</button>
+</div><br>
 <div id="promos">—</div>
+<h2>📣 Рассылка</h2>
+<div class="row" style="flex-direction:column;align-items:stretch;max-width:600px">
+  <textarea id="bcText" rows="3" placeholder="Текст сообщения всем игрокам (у кого бот знает чат)"></textarea>
+  <div><button onclick="broadcast()">Отправить всем</button> <span class="muted" id="bcResult"></span></div>
+</div>
+<div id="toast"></div>
 <script>
 const KEY = new URLSearchParams(location.search).get('key');
 const GOAL = 10000;
+let USERS = [];
+function fmt(n){return Number(n).toLocaleString('ru-RU')}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(function(){el.style.display='none'},2500)}
+
 async function load(){
   const r = await fetch('/api/admin/data?key=' + KEY);
   const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка ключа'; return; }
-  document.getElementById('stats').textContent = 'Всего задонатили: ' + j.totalDonated + ' ₽ · игроков: ' + j.users.length;
+  USERS = j.users;
+  document.getElementById('stats').textContent = 'Всего задонатили: ' + fmt(j.totalDonated) + ' ₽ · игроков: ' + j.users.length;
 
   const fill = document.getElementById('progFill');
   const label = document.getElementById('progLabel');
@@ -404,42 +528,64 @@ async function load(){
   fill.style.width = pct + '%';
   if (j.totalDonated >= GOAL) {
     fill.classList.add('done');
-    label.textContent = '🎉 Цель ' + GOAL.toLocaleString('ru-RU') + ' ₽ собрана!';
+    label.textContent = '🎉 Цель ' + fmt(GOAL) + ' ₽ собрана!';
     label.classList.add('done');
   } else {
     fill.classList.remove('done');
     label.classList.remove('done');
-    label.textContent = 'Поступления: ' + j.totalDonated.toLocaleString('ru-RU') + ' из ' +
-      GOAL.toLocaleString('ru-RU') + ' ₽ (' + pct + '%)';
+    label.textContent = 'Поступления: ' + fmt(j.totalDonated) + ' из ' + fmt(GOAL) + ' ₽ (' + pct + '%)';
   }
 
   const ld = j.lastDonation;
   document.getElementById('lastDonation').innerHTML = ld
-    ? ld.amount + ' ₽ от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' круток' +
+    ? ld.amount + ' ₽ от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' взрывов' +
       (ld.recognized ? '' : ' (НЕ РАСПОЗНАН)')
     : 'Пока донатов не было';
+
   document.getElementById('unrecognized').innerHTML = j.unrecognized.length
     ? '<table><tr><th>Сумма</th><th>Сообщение</th><th>Кому</th></tr>' +
       j.unrecognized.map(d => '<tr><td>' + d.amount + ' ₽</td><td>' + (d.message || '—') + '</td><td>' +
         '<input id="tg' + d.id + '" placeholder="telegram_id" style="width:110px">' +
         ' <button onclick="resolve(' + d.id + ')">Зачислить</button></td></tr>').join('') + '</table>'
     : 'Нет нераспознанных донатов 👌';
-  document.getElementById('users').innerHTML =
-    '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>+взрывы</th></tr>' +
-    j.users.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
-      '</td><td>' + u.spins + '</td><td>' + u.donated + ' ₽</td><td>' + (u.goal_bonus ? '✅' : '—') + '</td><td>' +
-      '<input id="sp' + u.telegram_id + '" type="number" value="1" style="width:50px">' +
-      ' <button onclick="addSpins(\\'' + u.telegram_id + '\\')">Начислить</button></td></tr>').join('') + '</table>';
+
+  renderUsers();
   document.getElementById('promos').innerHTML = j.promos.length
-    ? '<table><tr><th>Код</th><th>Взрывов</th><th>Использован</th></tr>' +
-      j.promos.map(p => '<tr><td>' + p.code + '</td><td>' + p.spins + '</td><td>' +
-        (p.used_by ? 'да' : 'нет') + '</td></tr>').join('') + '</table>'
+    ? '<table><tr><th>Код</th><th>Взрывов</th><th>Использован</th><th></th></tr>' +
+      j.promos.map(p => '<tr><td style="font-family:monospace">' + p.code + '</td><td>' + p.spins + '</td><td>' +
+        (p.used_by ? 'да (' + p.used_by + ')' : 'нет') + '</td><td>' +
+        '<button class="gray" onclick="delPromo(\\'' + p.code + '\\')">✕</button></td></tr>').join('') + '</table>'
     : 'Нет промокодов';
 }
+
+function renderUsers(){
+  const q = (document.getElementById('searchQ').value || '').toLowerCase();
+  const list = USERS.filter(u =>
+    !q || (u.username || '').toLowerCase().indexOf(q) >= 0 ||
+    (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
+    String(u.telegram_id).indexOf(q) >= 0);
+  document.getElementById('users').innerHTML = list.length
+    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
+      list.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
+      '</td><td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
+      '<td><input id="dn' + u.telegram_id + '" type="number" value="' + u.donated + '" style="width:70px"></td>' +
+      '<td>' + (u.goal_bonus ? '✅' : '—') + '</td><td>' +
+      '<button onclick="saveUser(\\'' + u.telegram_id + '\\')">Сохранить</button> ' +
+      '<button onclick="addSpins(\\'' + u.telegram_id + '\\')">+1</button></td></tr>').join('') + '</table>'
+    : 'Никого не найдено';
+}
+
+async function saveUser(id){
+  const spins = document.getElementById('sp' + id).value;
+  const donated = document.getElementById('dn' + id).value;
+  await fetch('/api/admin/update-user', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY, telegramId: id, spins: spins, donated: donated }) });
+  toast('Сохранено ✅');
+  load();
+}
 async function addSpins(id){
-  const amount = document.getElementById('sp' + id).value;
   await fetch('/api/admin/add-spins', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, telegramId: id, amount: +amount }) });
+    body: JSON.stringify({ key: KEY, telegramId: id, amount: 1 }) });
   load();
 }
 async function resolve(id){
@@ -451,11 +597,39 @@ async function resolve(id){
 async function createPromo(){
   const code = document.getElementById('promoCode').value.trim().toUpperCase();
   const spins = document.getElementById('promoSpins').value || 1;
-  await fetch('/api/admin/create-promo', { method:'POST', headers:{'Content-Type':'application/json'},
+  const r = await fetch('/api/admin/create-promo', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ key: KEY, code, spins: +spins }) });
-  document.getElementById('promoCode').value = '';
+  const j = await r.json();
+  if (j.ok) { toast('Промокод создан ✅'); document.getElementById('promoCode').value=''; }
+  else toast('Такой код уже есть');
   load();
 }
+async function generatePromo(){
+  const spins = document.getElementById('promoSpins').value || 1;
+  const r = await fetch('/api/admin/generate-promo', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY, spins: +spins }) });
+  const j = await r.json();
+  if (j.ok) {
+    toast('Код: ' + j.code);
+    try { document.execCommand('copy'); } catch(e){}
+    navigator.clipboard && navigator.clipboard.writeText(j.code);
+  }
+  load();
+}
+async function delPromo(code){
+  await fetch('/api/admin/delete-promo', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY, code: code }) });
+  load();
+}
+async function broadcast(){
+  const text = document.getElementById('bcText').value.trim();
+  if (!text) return;
+  const r = await fetch('/api/admin/broadcast', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY, text: text }) });
+  const j = await r.json();
+  document.getElementById('bcResult').textContent = 'Доставлено: ' + j.sent;
+}
+document.getElementById('searchQ').addEventListener('input', renderUsers);
 load();
 setInterval(load, 15000);
 </script></body></html>`;
