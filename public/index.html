@@ -104,26 +104,26 @@
     height: 50%;
     left: 50%;
     top: 0;
-    transform-origin: 0% 100%;
+    transform-origin: 0% 100%; /* Вращение вокруг центра колеса */
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
+    justify-content: flex-start; /* Текст прижат к внешнему краю */
     align-items: center;
     pointer-events: none;
-    padding-top: 15px;
+    padding-top: 10px; /* Отступ от края колеса */
   }
 
   /* Текст внутри сектора */
   .wheel-segment span {
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 800;
     color: #fff;
     text-shadow: 1px 1px 2px #000, 0 0 4px #000;
     text-align: center;
-    max-width: 65px;
+    width: 80px; /* Фиксированная ширина, чтобы текст не вылезал */
     line-height: 1.1;
     word-break: break-word;
-    transform: rotate(180deg);
+    /* Никаких rotate(180deg) — текст идет от центра к краю */
   }
 
   /* Кнопки */
@@ -226,7 +226,6 @@
     overflow: hidden;
   }
 
-  /* Анимация огненного фона внутри окна */
   .modal-content::before {
     content: '';
     position: absolute;
@@ -268,7 +267,6 @@
     100% { transform: rotate(360deg); }
   }
 
-  /* Пульсирующее свечение вокруг */
   .pentagram-container::after {
     content: '';
     position: absolute;
@@ -344,12 +342,10 @@
     <ul id="prizeList"></ul>
   </div>
 
-  <!-- МОДАЛЬНОЕ ОКНО -->
   <div id="winModal" class="modal">
     <div class="modal-content">
       <h2>Поздравляем!</h2>
       <div class="pentagram-container">
-        <!-- SVG Огненной Пентаграммы -->
         <svg class="pentagram-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
           <polygon points="50,5 61,38 95,38 68,59 79,93 50,72 21,93 32,59 5,38 39,38" 
                    fill="none" 
@@ -372,9 +368,6 @@
   </div>
 
 <script>
-// =======================================================
-// СПИСОК ВСЕХ 18 ПРИЗОВ (без картинок)
-// =======================================================
 const prizes = [
   { name: 'Любая наживка 5 шт' },
   { name: 'Приманки на выбор' },
@@ -395,7 +388,6 @@ const prizes = [
   { name: 'Премиум 30 дней' },
   { name: 'Venga II 10k' }
 ];
-// =======================================================
 
 const colors = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#c0392b', '#16a085', '#8e44ad', '#d35400', '#27ae60', '#2980b9', '#8e44ad', '#f39c12', '#16a085', '#c0392b', '#2ecc71'];
 
@@ -436,7 +428,6 @@ function createParticles() {
 }
 createParticles();
 
-// Отрисовка колеса (только текст)
 function drawWheel() {
   const totalPrizes = prizes.length;
   const anglePerPrize = 360 / totalPrizes;
@@ -451,6 +442,7 @@ function drawWheel() {
     
     const segment = document.createElement('div');
     segment.className = 'wheel-segment';
+    // Центрируем сектор
     segment.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
     
     const span = document.createElement('span');
@@ -547,7 +539,6 @@ async function spin() {
       if (j.ok) {
         const serverPrizeName = j.prize.label;
         
-        // Показываем название приза в модальном окне
         winTitle.innerText = serverPrizeName;
         modal.style.display = 'flex';
 
