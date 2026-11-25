@@ -309,30 +309,50 @@ app.get('/admin', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).send('Доступ запрещён. Добавь в адрес ?key=твой_ключ')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Панель рулетки</title>
-<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}</style></head><body>
+<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}</style></head><body>
 <h1>🎰 Панель рулетки</h1>
 <h2>Начислить крутки вручную</h2>
 <input id="uname" placeholder="@username или имя в ТГ"><input id="cnt" type="number" value="1" style="width:60px" placeholder="круток">
 <button onclick="addSpins()">Начислить</button><span id="msg"></span>
 <h2>Балансы круток</h2><table id="bal"></table>
 <h2>Журнал выигрышей</h2><table id="log"></table>
+<button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
+<button class="danger" onclick="clearHistory()">🧹 Очистить журнал выигрышей</button><span id="clrmsg"></span>
 <h2>Нераспознанные донаты</h2><table id="pend"></table>
 <script>
 const KEY = location.search;
+let allWins = [];
+let shownCount = 30;
 async function load(){
   const r = await fetch('/api/admin/data' + KEY); const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка доступа'; return; }
   document.getElementById('bal').innerHTML = '<tr><th>Игрок (ТГ)</th><th>Игровой ник</th><th>Круток</th><th>Задонатил, ₽</th></tr>' +
     j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
-  document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Игровой ник</th><th>Приз</th></tr>' +
-    j.wins.map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+(w.gameNick||'—')+'</td><td>'+w.prize+'</td></tr>').join('');
+  allWins = j.wins;
+  renderLog();
   document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th></th></tr>' +
     (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td><button onclick="assign('+p.id+')">Начислить</button></td></tr>').join('') : '<tr><td colspan="4">пусто</td></tr>');
 }
+function renderLog(){
+  document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Игровой ник</th><th>Приз</th></tr>' +
+    allWins.slice(0, shownCount).map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+(w.gameNick||'—')+'</td><td>'+w.prize+'</td></tr>').join('');
+  const btn = document.getElementById('moreBtn');
+  if (allWins.length > shownCount) { btn.style.display = 'inline-block'; btn.textContent = 'Показать ещё 30 (осталось ' + (allWins.length - shownCount) + ')'; }
+  else { btn.style.display = 'none'; }
+}
+function showMore(){ shownCount += 30; renderLog(); }
 async function addSpins(){
   const r = await fetch('/api/admin/add-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ uname: document.getElementById('uname').value, count: parseInt(document.getElementById('cnt').value)||1 }) });
   const j = await r.json(); document.getElementById('msg').textContent = j.ok ? ' ✅' : ' ❌ ' + (j.error||'');
+  load();
+}
+async function clearHistory(){
+  if (!confirm('Точно стереть ВЕСЬ журнал выигрышей? Действие необратимо.')) return;
+  shownCount = 30;
+  const r = await fetch('/api/admin/clear-history' + KEY, { method:'POST' });
+  const j = await r.json();
+  document.getElementById('clrmsg').textContent = j.ok ? ' ✅ Журнал очищен' : ' ❌ ' + (j.error||'');
   load();
 }
 async function assign(id){
@@ -390,6 +410,20 @@ app.post('/api/admin/assign-pending', async (req, res) => {
   await syncUserToDB(entryKey, users[entryKey])
 
   res.json({ ok: true, spins: users[entryKey].spins, credited: spins })
+})
+
+app.post('/api/admin/clear-history', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
+  winsLog.length = 0
+  if (supabase) {
+    try {
+      await supabase.from('roulette_history').delete().gte('id', 0)
+    } catch (e) {
+      console.error('Clear history error:', e.message)
+      return res.status(500).json({ ok: false, error: 'db_error' })
+    }
+  }
+  res.json({ ok: true })
 })
 
 // === DonationAlerts ===
