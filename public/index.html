@@ -1,310 +1,237 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Колесо Золотой Удачи</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Золотая Удача</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body{
-    min-height:100vh;
-    background:radial-gradient(1100px 750px at 50% -10%, #2b4a6b 0%, #16283c 45%, #0b1420 100%);
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    font-family:'Segoe UI',Arial,sans-serif; color:#f5e6b8; padding:24px; overflow-x:hidden;
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: radial-gradient(circle at 50% 25%, #3a2a08 0%, #241a05 35%, #140d02 70%, #0b0700 100%);
+    color: #f5e6c8; min-height: 100vh;
+    padding: 24px 16px 40px;
   }
-  h1{ font-size:clamp(24px,5vw,40px); color:#ffd76a; text-shadow:0 2px 10px rgba(0,0,0,.6); margin-bottom:20px; letter-spacing:1px; }
-  .wheel-box{ position:relative; width:min(92vw,640px); }
-  #wheel{ width:100%; height:auto; display:block; filter:drop-shadow(0 18px 40px rgba(0,0,0,.55)); }
-  .pointer{
-    position:absolute; top:-24px; left:50%; transform:translateX(-50%);
-    width:0; height:0; z-index:5;
-    border-left:20px solid transparent; border-right:20px solid transparent;
-    border-top:42px solid #ffd76a;
-    filter:drop-shadow(0 4px 5px rgba(0,0,0,.55));
+  .wrap { max-width: 480px; margin: 0 auto; text-align: center; }
+
+  /* Заголовок */
+  h1 {
+    font-size: 32px; font-weight: 900; letter-spacing: 1px;
+    color: #ffd700;
+    text-shadow: 0 0 18px rgba(255,215,0,.55), 0 2px 4px rgba(0,0,0,.8);
+    margin-bottom: 14px;
   }
-  #spin{
-    margin-top:26px; padding:16px 58px; font-size:22px; font-weight:800; letter-spacing:2px;
-    color:#4a2c00; background:linear-gradient(180deg,#ffe9a8,#f2c14e 45%,#c98a1b);
-    border:2px solid #fff0c0; border-radius:14px; cursor:pointer;
-    box-shadow:0 6px 20px rgba(242,193,78,.45), inset 0 2px 4px rgba(255,255,255,.6);
-    transition:transform .12s, box-shadow .12s;
+  .hello { font-size: 18px; color: #f5e6c8; line-height: 1.5; }
+  .hello b { color: #ffe97a; font-weight: 700; }
+  .hello .gold { color: #ffd700; font-weight: 700; }
+
+  /* Слот-машина */
+  .slot {
+    font-size: 110px; margin: 26px 0 10px;
+    display: inline-block;
+    filter: drop-shadow(0 0 22px rgba(255,215,0,.45));
   }
-  #spin:hover{ transform:translateY(-2px); box-shadow:0 10px 26px rgba(242,193,78,.6), inset 0 2px 4px rgba(255,255,255,.6); }
-  #spin:disabled{ filter:grayscale(.6); opacity:.7; cursor:not-allowed; transform:none; }
-  #modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-    background:rgba(4,8,14,.82); z-index:50; }
-  #modal.show{ display:flex; }
-  .card{
-    background:linear-gradient(160deg,#22304a,#101826); border:3px solid #ffd76a; border-radius:24px;
-    padding:34px 42px; text-align:center; max-width:92vw;
-    box-shadow:0 0 70px rgba(255,205,90,.35); animation:pop .35s ease;
+  .slot.spin { animation: shake .35s linear infinite; }
+  @keyframes shake {
+    0% { transform: rotate(0) scale(1); }
+    25% { transform: rotate(-6deg) scale(1.05); }
+    50% { transform: rotate(6deg) scale(1.05); }
+    75% { transform: rotate(-4deg) scale(1.02); }
+    100% { transform: rotate(0) scale(1); }
   }
-  .card img{ width:190px; height:190px; object-fit:contain; border-radius:50%;
-    border:5px solid #ffd76a; background:#0d1520; box-shadow:0 0 30px rgba(255,205,90,.4); }
-  .card .emoji{ font-size:120px; line-height:1.2; }
-  .card h2{ color:#ffd76a; margin:16px 0 6px; font-size:28px; }
-  .card p{ color:#dfe8f2; }
-  #close{
-    margin-top:20px; padding:12px 36px; font-size:17px; font-weight:700; color:#4a2c00;
-    background:linear-gradient(180deg,#ffe9a8,#f2c14e 45%,#c98a1b); border:2px solid #fff0c0;
-    border-radius:12px; cursor:pointer;
+
+  /* Результат прокрутки */
+  #result { font-size: 20px; font-weight: 700; color: #ffd700; min-height: 28px; margin: 10px 0 16px; }
+
+  /* Красная плашка "нет прокруток" */
+  .notice {
+    border: 1.5px solid #ff4d4d; border-radius: 18px;
+    background: rgba(90,20,20,.35);
+    padding: 18px 20px; margin-bottom: 22px;
+    font-size: 17px; line-height: 1.5; color: #ffd9d9;
   }
-  @keyframes pop{ from{transform:scale(.7);opacity:0} to{transform:scale(1);opacity:1} }
-  #confetti{ position:fixed; inset:0; pointer-events:none; z-index:60; }
+
+  /* Кнопки */
+  .btn {
+    display: block; width: 100%;
+    padding: 17px; margin-bottom: 12px;
+    font-size: 19px; font-weight: 800;
+    border: none; border-radius: 16px; cursor: pointer;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+  .btn-spin {
+    background: linear-gradient(90deg, #ffb800, #ff8a00);
+    color: #241a05;
+    box-shadow: 0 0 24px rgba(255,170,0,.45);
+    font-size: 22px;
+  }
+  .btn-spin:hover:not(:disabled) { box-shadow: 0 0 34px rgba(255,170,0,.65); }
+
+  .btn-dark {
+    background: #2b2b2b; color: #fff;
+    border: 1px solid #444;
+  }
+  .btn-dark:hover { background: #3a3a3a; }
+
+  .btn-green {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    color: #fff; padding: 16px;
+  }
+  .btn-green .big { font-size: 19px; font-weight: 800; display: block; }
+  .btn-green .small { font-size: 13px; font-weight: 400; display: block; margin-top: 4px; opacity: .9; }
+
+  /* Поле смены ника (скрыто по умолчанию) */
+  #nickBox { display: none; margin-bottom: 12px; }
+  #nickBox input {
+    width: 100%; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid #ffd700; background: rgba(0,0,0,.35);
+    color: #ffd700; font-size: 16px; outline: none; text-align: center;
+  }
+
+  /* История */
+  #history {
+    margin-top: 18px; text-align: left; max-height: 160px; overflow-y: auto;
+    font-size: 14px; color: #d9c9a0;
+  }
+  #history div { padding: 4px 0; }
+  #history span { color: #ffd700; }
+
+  /* Как играть */
+  .rules {
+    margin-top: 26px; text-align: left;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,215,0,.25);
+    border-radius: 18px; padding: 20px;
+  }
+  .rules h3 { color: #ffd700; font-size: 19px; margin-bottom: 12px; text-align: center; }
+  .rules ul { margin-left: 18px; line-height: 1.6; font-size: 15px; }
+  .important {
+    margin-top: 14px; padding: 12px;
+    border: 1px dashed #ffd700; border-radius: 12px;
+    font-size: 14px; color: #ffe97a; text-align: center; font-weight: 600;
+  }
 </style>
 </head>
 <body>
 
-<h1>🎣 Колесо Золотой Удачи</h1>
+<div class="wrap">
 
-<div class="wheel-box">
-  <div class="pointer"></div>
-  <canvas id="wheel" width="900" height="900"></canvas>
-</div>
+  <h1>⭐ ЗОЛОТАЯ УДАЧА ⭐</h1>
 
-<button id="spin">КРУТИТЬ!</button>
-
-<div id="modal">
-  <div class="card">
-    <div id="prizeArt"></div>
-    <h2 id="prizeName"></h2>
-    <p>Поздравляем! Это твой приз 🎉</p>
-    <button id="close">Забрать приз</button>
+  <div class="hello" id="hello">
+    Привет, <b id="nickDisplay">@Гость</b>!<br>
+    Прокрутков: <span class="gold" id="spinsCount">0</span><br>
+    Ник: <span id="fullName">—</span>
   </div>
-</div>
 
-<canvas id="confetti"></canvas>
+  <div><span class="slot" id="slot">🎰</span></div>
+  <div id="result"></div>
+
+  <div class="notice" id="notice">😐 Нет прокрутков.<br>Задонать 100 ₽ = 1 прокрутка!</div>
+
+  <button class="btn btn-spin" id="btnSpin" onclick="spin()">КРУТИТЬ!</button>
+
+  <div id="nickBox">
+    <input id="nickInput" placeholder="Введи свой @ник" autocomplete="off">
+  </div>
+  <button class="btn btn-dark" onclick="toggleNick()">✏️ СМЕНИТЬ ИГРОВОЙ НИК</button>
+
+  <button class="btn btn-green" onclick="window.open('ССЫЛКА_НА_ДОНАТ_В_DA','_blank')">
+    💸 ЗАДОНАТЬ 100 ₽ = 1 ПРОКРУТКА
+    <span class="small">в сообщении к донату напиши свой @ник</span>
+  </button>
+
+  <div id="history"></div>
+
+  <div class="rules">
+    <h3>📌 Как играть</h3>
+    <ul>
+      <li>Нажми «Крутить!» — так ты регистрируешься.</li>
+      <li>Донат: 100 ₽ = 1 прокрутка.</li>
+      <li>Крутишь — получаешь случайный приз из 18.</li>
+      <li>Приз выдаёт админ после проверки доната.</li>
+    </ul>
+    <div class="important">❗ ВАЖНО: в сообщении к донату напиши свой @ник из Telegram. Без него прокрутки не зачислятся!</div>
+  </div>
+
+</div>
 
 <script>
-/* ================= ПРИЗЫ =================
-   img — имя файла рядом с index.html.
-   Если файла нет — сектор покажет текст и иконку.
-   weight — вес приза (шанс). Можно менять числа. */
-const PRIZES = [
-  { name:"Любая наживка",       img:null,             icon:"🎣", weight:14 },
-  { name:"Приманки на выбор",   img:null,             icon:"🪝", weight:12 },
-  { name:"1 бутылка алкоголя",  img:null,             icon:"🍾", weight:10 },
-  { name:"Кофе 500",            img:"coffee.png",     weight:10 },
-  { name:"Кофе 1000",           img:"coffee.png",     weight:8  },
-  { name:"Золотая монета 1 шт", img:"coin1.png",      weight:8  },
-  { name:"Премиум 3 дня",       img:"prem3.png",      weight:6  },
-  { name:"Майка 10 шт",         img:"maika.png",      weight:5  },
-  { name:"Нос 10 шт",           img:"nos.png",        weight:5  },
-  { name:"Бокоплав 10 шт",      img:"bokoplav.png",   weight:5  },
-  { name:"Медведка 10 шт",      img:"medvedka.png",   weight:4  },
-  { name:"Дрейсена 10 шт",      img:"dreysena.png",   weight:4  },
-  { name:"Перловица 10 шт",     img:"perlovitsa.png", weight:4  },
-  { name:"Сбитень 10 шт",       img:"sbiten.png",     weight:3  },
-  { name:"Золотая монета 2 шт", img:"coin2.png",      weight:3  },
-  { name:"Премиум 7 дней",      img:"prem7.png",      weight:2  },
-  { name:"Премиум 30 дней",     img:"prem30.png",     weight:1  },
-  { name:"Venga II 10k",        img:"venga.png",      weight:0.4}
-];
+const slot      = document.getElementById('slot');
+const result    = document.getElementById('result');
+const notice    = document.getElementById('notice');
+const btnSpin   = document.getElementById('btnSpin');
+const nickBox   = document.getElementById('nickBox');
+const nickInput = document.getElementById('nickInput');
+const nickDisp  = document.getElementById('nickDisplay');
+const spinsEl   = document.getElementById('spinsCount');
+const fullName  = document.getElementById('fullName');
+const history   = document.getElementById('history');
 
-const TAU = Math.PI*2, SEG = TAU/PRIZES.length;
-const SIZE = 900, CX = SIZE/2, CY = SIZE/2, R = SIZE/2-14, R1 = R-18;
+// Восстанавливаем ник
+nickInput.value = localStorage.getItem('nick') || '';
+if (nickInput.value) nickDisp.textContent = nickInput.value;
 
-const wheel = document.getElementById('wheel');
-const ctx = wheel.getContext('2d');
-const off = document.createElement('canvas');   // скрытый буфер: колесо рисуется ОДИН раз
-off.width = off.height = SIZE;
-const octx = off.getContext('2d');
+function toggleNick() {
+  if (nickBox.style.display === 'block') {
+    const nick = nickInput.value.trim();
+    if (nick) {
+      localStorage.setItem('nick', nick);
+      nickDisp.textContent = nick;
+    }
+    nickBox.style.display = 'none';
+  } else {
+    nickBox.style.display = 'block';
+    nickInput.focus();
+  }
+}
 
-const imgs = new Array(PRIZES.length).fill(null);
-PRIZES.forEach((p,i)=>{
-  if(!p.img) return;
-  const im = new Image();
-  im.onload = ()=>{ imgs[i]=im; buildWheel(); draw(); };
-  im.src = p.img; // если файла нет — просто останется текст, ничего не сломается
+async function spin() {
+  const nick = nickInput.value.trim() || localStorage.getItem('nick') || 'Гость';
+  localStorage.setItem('nick', nick);
+  nickDisp.textContent = nick;
+
+  btnSpin.disabled = true;
+  slot.classList.add('spin');
+  result.textContent = '';
+  notice.style.display = 'none';
+
+  await new Promise(r => setTimeout(r, 1800));
+
+  try {
+    const res = await fetch('/api/spin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nick })
+    });
+    const data = await res.json();
+
+    slot.classList.remove('spin');
+    result.textContent = '⭐ ' + data.prize + ' ⭐';
+    spinsEl.textContent = data.spins;
+
+    history.innerHTML = data.history
+      .map(h => `<div>#${h.n} — <span>${h.prize}</span></div>`)
+      .join('');
+
+    if (data.prize === 'Бонус: +1 крутка') {
+      setTimeout(() => alert('🎉 Повезло! Тебе начислена дополнительная прокрутка.'), 300);
+    }
+  } catch (e) {
+    slot.classList.remove('spin');
+    result.textContent = 'Ошибка сервера, попробуй ещё раз.';
+  } finally {
+    btnSpin.disabled = false;
+  }
+}
+
+nickInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { toggleNick(); spin(); }
 });
-
-/* ---------- Отрисовка колеса в буфер ---------- */
-function buildWheel(){
-  const g = octx;
-  g.clearRect(0,0,SIZE,SIZE);
-
-  // золотой обод
-  const rim = g.createLinearGradient(0,0,SIZE,SIZE);
-  rim.addColorStop(0,'#f7d98a'); rim.addColorStop(.5,'#a9741f'); rim.addColorStop(1,'#f2c14e');
-  g.beginPath(); g.arc(CX,CY,R,0,TAU); g.fillStyle=rim; g.fill();
-
-  // сектора
-  const colors = ['#12314e','#0e4a3a'];
-  PRIZES.forEach((p,i)=>{
-    const a0 = -Math.PI/2 + i*SEG, a1 = a0+SEG;
-    g.beginPath(); g.moveTo(CX,CY); g.arc(CX,CY,R1,a0,a1); g.closePath();
-    g.fillStyle = colors[i%2]; g.fill();
-    g.lineWidth = 3; g.strokeStyle = 'rgba(255,214,106,.9)'; g.stroke();
-
-    g.save(); g.translate(CX,CY); g.rotate(a0+SEG/2);
-    if(imgs[i]) drawMedallion(g, imgs[i], R1*0.74, R1*0.105);
-    else drawIcon(g, p.icon, R1*0.72, R1*0.12);
-    drawLabel(g, p.name, R1*0.58);
-    g.restore();
-  });
-
-  // внутренняя тень по краю секторов
-  g.beginPath(); g.arc(CX,CY,R1,0,TAU);
-  g.lineWidth=6; g.strokeStyle='rgba(0,0,0,.35)'; g.stroke();
-
-  // лампочки на ободе
-  for(let i=0;i<PRIZES.length;i++){
-    const a = -Math.PI/2 + (i+0.5)*SEG;
-    const x = CX + Math.cos(a)*(R-10), y = CY + Math.sin(a)*(R-10);
-    g.beginPath(); g.arc(x,y,7,0,TAU);
-    g.fillStyle = i%2 ? '#fff3cf' : '#8a5a12'; g.fill();
-    g.lineWidth=2; g.strokeStyle='rgba(0,0,0,.4)'; g.stroke();
-  }
-
-  // центр (ступица)
-  const hub = g.createRadialGradient(CX,CY-10,5,CX,CY,SIZE*0.08);
-  hub.addColorStop(0,'#ffe9a8'); hub.addColorStop(1,'#8a5a12');
-  g.beginPath(); g.arc(CX,CY,SIZE*0.072,0,TAU);
-  g.fillStyle=hub; g.fill();
-  g.lineWidth=5; g.strokeStyle='#6b440e'; g.stroke();
-  g.font='700 30px "Segoe UI",Arial'; g.textAlign='center'; g.textBaseline='middle';
-  g.fillStyle='#4a2c00'; g.fillText('SPIN',CX,CY);
-}
-
-function drawMedallion(g,img,cx,cy,r){
-  g.save();
-  g.beginPath(); g.arc(cx,cy,r,0,TAU); g.clip();
-  const s = Math.max(2*r/img.width, 2*r/img.height);
-  g.drawImage(img, cx-img.width*s/2, cy-img.height*s/2, img.width*s, img.height*s);
-  g.restore();
-  g.beginPath(); g.arc(cx,cy,r,0,TAU);
-  g.lineWidth = Math.max(3, r*0.13); g.strokeStyle='#f2c14e'; g.stroke();
-}
-
-function drawIcon(g,emoji,cx,cy,r){
-  g.beginPath(); g.arc(cx,cy,r,0,TAU);
-  g.fillStyle='rgba(0,0,0,.30)'; g.fill();
-  g.lineWidth=3; g.strokeStyle='rgba(255,214,106,.8)'; g.stroke();
-  g.font = (r*1.3)+'px serif'; g.textAlign='center'; g.textBaseline='middle';
-  g.fillText(emoji,cx,cy+r*0.06);
-}
-
-function drawLabel(g,text,xMax){
-  const maxW = R1*0.40;
-  let size = 23;
-  g.font = '700 '+size+'px "Segoe UI",Arial';
-  const words = text.split(' ');
-  let lines = [text];
-  if(words.length>1 && g.measureText(text).width>maxW){
-    let l1='';
-    for(const w of words){ const t=l1?l1+' '+w:w; if(g.measureText(t).width>maxW) break; l1=t; }
-    const rest = words.slice(l1.split(' ').length).join(' ');
-    if(rest) lines=[l1,rest];
-  }
-  while(lines.length===1 && g.measureText(lines[0]).width>maxW && size>13){
-    size-=1; g.font='700 '+size+'px "Segoe UI",Arial';
-  }
-  const lh = size*1.15, y0 = -(lines.length-1)*lh/2;
-  g.textAlign='right'; g.textBaseline='middle';
-  lines.forEach((ln,i)=>{
-    g.lineWidth=4; g.strokeStyle='rgba(0,0,0,.6)'; g.strokeText(ln,xMax,y0+i*lh);
-    g.fillStyle='#ffeec2'; g.fillText(ln,xMax,y0+i*lh);
-  });
-}
-
-/* ---------- Плавное вращение (без лагов) ---------- */
-let rot = 0, spinning = false, lastIdx = -1;
-function draw(){
-  ctx.clearRect(0,0,SIZE,SIZE);
-  ctx.save(); ctx.translate(CX,CY); ctx.rotate(rot);
-  ctx.drawImage(off,-CX,-CY);      // один drawImage за кадр — дёшево и плавно
-  ctx.restore();
-}
-buildWheel(); draw();
-
-function pickWeighted(){
-  const s = PRIZES.reduce((a,p)=>a+p.weight,0);
-  let r = Math.random()*s;
-  for(let i=0;i<PRIZES.length;i++){ r-=PRIZES[i].weight; if(r<0) return i; }
-  return PRIZES.length-1;
-}
-
-/* ---------- Звук тиков (без файлов) ---------- */
-let actx = null;
-function ensureAudio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
-function tick(){
-  if(!actx) return;
-  const o=actx.createOscillator(), gn=actx.createGain();
-  o.type='square'; o.frequency.value=1150;
-  gn.gain.setValueAtTime(0.06,actx.currentTime);
-  gn.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.05);
-  o.connect(gn); gn.connect(actx.destination);
-  o.start(); o.stop(actx.currentTime+0.06);
-}
-
-/* ---------- Крутить ---------- */
-const btn = document.getElementById('spin');
-btn.addEventListener('click', ()=>{
-  if(spinning) return;
-  spinning = true; btn.disabled = true; ensureAudio();
-  const k = pickWeighted();
-  const center = (k+0.5)*SEG + (Math.random()-0.5)*SEG*0.7;
-  const f0 = -center;
-  const n = Math.ceil((rot + 6*TAU - f0)/TAU);
-  const start = rot, end = f0 + TAU*n, D = 6800, t0 = performance.now();
-  lastIdx = Math.floor((( -rot)%TAU+TAU)%TAU/SEG);
-
-  function frame(now){
-    let t = Math.min(1,(now-t0)/D);
-    const e = 1 - Math.pow(1-t,4);          // плавное затухание
-    rot = start + (end-start)*e;
-    draw();
-    const idx = Math.floor((((-rot)%TAU)+TAU)%TAU/SEG);
-    if(idx!==lastIdx){ lastIdx=idx; tick(); }
-    if(t<1) requestAnimationFrame(frame);
-    else { spinning=false; btn.disabled=false; showPrize(k); }
-  }
-  requestAnimationFrame(frame);
-});
-
-/* ---------- Модалка с призом ---------- */
-const modal = document.getElementById('modal');
-function showPrize(k){
-  document.getElementById('prizeArt').innerHTML = imgs[k]
-    ? '<img src="'+imgs[k].src+'" alt="">'
-    : '<div class="emoji">'+(PRIZES[k].icon||'🎁')+'</div>';
-  document.getElementById('prizeName').textContent = PRIZES[k].name;
-  modal.classList.add('show');
-  burst();
-}
-document.getElementById('close').addEventListener('click', ()=> modal.classList.remove('show'));
-modal.addEventListener('click', e=>{ if(e.target===modal) modal.classList.remove('show'); });
-
-/* ---------- Конфетти ---------- */
-const cCan = document.getElementById('confetti'), cCtx = cCan.getContext('2d');
-function sizeConfetti(){ cCan.width=innerWidth; cCan.height=innerHeight; }
-addEventListener('resize', sizeConfetti); sizeConfetti();
-
-let parts = [], cAnim = null;
-function burst(){
-  const cols=['#ffd76a','#f2c14e','#ff6b5e','#6bd5ff','#7dffa8','#ffffff'];
-  parts=[];
-  for(let i=0;i<160;i++) parts.push({
-    x:Math.random()*cCan.width, y:-20-Math.random()*cCan.height*0.4,
-    vx:(Math.random()-0.5)*3, vy:2+Math.random()*3.5,
-    s:6+Math.random()*8, a:Math.random()*TAU, va:(Math.random()-0.5)*0.25,
-    c:cols[i%cols.length]
-  });
-  if(!cAnim) cAnim = requestAnimationFrame(loopC);
-}
-function loopC(){
-  cCtx.clearRect(0,0,cCan.width,cCan.height);
-  let alive=false;
-  for(const p of parts){
-    p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.a+=p.va;
-    if(p.y<cCan.height+30) alive=true;
-    cCtx.save(); cCtx.translate(p.x,p.y); cCtx.rotate(p.a);
-    cCtx.fillStyle=p.c; cCtx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);
-    cCtx.restore();
-  }
-  if(alive) cAnim=requestAnimationFrame(loopC);
-  else { cAnim=null; cCtx.clearRect(0,0,cCan.width,cCan.height); }
-}
 </script>
+
 </body>
 </html>
