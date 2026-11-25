@@ -95,33 +95,6 @@
     filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5));
   }
 
-  /* Слой текста */
-  .wheel-text-layer {
-    position: absolute;
-    width: 50%;
-    height: 50%;
-    left: 50%;
-    top: 0;
-    transform-origin: 0% 100%;
-    pointer-events: none;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;   /* верх слоя = внешний край колеса */
-    padding-top: 14px;         /* отступ от обода */
-  }
-
-  /* Сам текст */
-  .wheel-text-layer span {
-    font-size: 10px;
-    font-weight: 800;
-    color: #fff;
-    text-shadow: 1px 1px 2px #000, 0 0 4px #000;
-    text-align: center;
-    line-height: 1.2;
-    white-space: nowrap;
-    transform: rotate(-90deg); /* текст читается вдоль радиуса, от центра к краю */
-  }
-
   /* Кнопки */
   .btn {
     display: block; width: 100%; max-width: 320px;
@@ -425,30 +398,42 @@ function createParticles() {
 createParticles();
 
 function drawWheel() {
-  const totalPrizes = prizes.length;
-  const anglePerPrize = 360 / totalPrizes;
-  let gradientStr = [];
+  const total = prizes.length;
+  const anglePer = 360 / total;
+  const grads = [];
   elWheel.innerHTML = '';
 
-  prizes.forEach((prize, index) => {
-    const startAngle = index * anglePerPrize;
-    const endAngle = (index + 1) * anglePerPrize;
-    const color = colors[index % colors.length];
-    gradientStr.push(`${color} ${startAngle}deg ${endAngle}deg`);
-    
+  prizes.forEach((p, i) => {
+    const start = i * anglePer;
+    const end = (i + 1) * anglePer;
+    grads.push(`${colors[i % colors.length]} ${start}deg ${end}deg`);
+
+    const centerAngle = start + anglePer / 2;
+    const R = 110; // радиус, откуда начинается надпись (от центра колеса)
+
     const layer = document.createElement('div');
-    layer.className = 'wheel-text-layer';
-    // Поворачиваем слой ровно по центру сектора
-    layer.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
-    
+    layer.style.position = 'absolute';
+    layer.style.left = '50%';
+    layer.style.top = '50%';
+    layer.style.transformOrigin = 'center';
+    // 1) повернуть на центр сектора, 2) уйти на радиус R, 3) повернуть текст на 90° (вдоль луча, от края к центру)
+    layer.style.transform = `rotate(${centerAngle}deg) translate(${R}px) rotate(90deg)`;
+    layer.style.pointerEvents = 'none';
+
     const span = document.createElement('span');
-    span.innerText = prize.name;
-    
+    span.innerText = p.name;
+    span.style.fontSize = '7px';
+    span.style.fontFamily = "'Unbounded', sans-serif";
+    span.style.fontWeight = '800';
+    span.style.color = '#fff';
+    span.style.textShadow = '2px 2px 4px #000';
+    span.style.whiteSpace = 'nowrap';
+
     layer.appendChild(span);
     elWheel.appendChild(layer);
   });
 
-  elWheel.style.background = `conic-gradient(${gradientStr.join(', ')})`;
+  elWheel.style.background = `conic-gradient(${grads.join(', ')})`;
 }
 drawWheel();
 
@@ -513,11 +498,11 @@ async function spin() {
   elSpinBtn.disabled = true;
 
   const spins = 7;
-  const totalPrizes = prizes.length;
-  const anglePerPrize = 360 / totalPrizes;
+  const total = prizes.length;
+  const anglePer = 360 / total;
   
-  const randomIndex = Math.floor(Math.random() * totalPrizes);
-  const targetAngle = 360 - (randomIndex * anglePerPrize) - (anglePerPrize / 2);
+  const randomIndex = Math.floor(Math.random() * total);
+  const targetAngle = 360 - (randomIndex * anglePer) - (anglePer / 2);
   
   const totalRotation = currentRotation + (360 * spins) + targetAngle;
   elWheel.style.transform = `rotate(${totalRotation}deg)`;
