@@ -1,8 +1,8 @@
-// ====== Золотая Удача — сервер ======
+// ====== Золотая Удача — сервер (Supabase) ======
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
@@ -12,6 +12,10 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== НАСТРОЙКИ ПАКЕТОВ И ЦЕЛИ ======
 const PROGRESS_GOAL = 10000;   // цель прогресс-бара, ₽
@@ -23,43 +27,6 @@ const PACKAGES = [
   { amount: 1000, spins: 13 }
 ];
 // ======================================
-
-// ====== БАЗА ======
-const db = new Database('roulette.db');
-db.pragma('journal_mode = WAL');
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  telegram_id TEXT PRIMARY KEY,
-  username TEXT,
-  chat_id TEXT,
-  game_nick TEXT,
-  spins INTEGER DEFAULT 0,
-  donated REAL DEFAULT 0,
-  goal_bonus INTEGER DEFAULT 0,
-  created_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS donations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  da_id TEXT UNIQUE,
-  amount REAL,
-  message TEXT,
-  username TEXT,
-  telegram_id TEXT,
-  spins_added INTEGER DEFAULT 0,
-  recognized INTEGER DEFAULT 0,
-  ts INTEGER
-);
-CREATE TABLE IF NOT EXISTS promos (
-  code TEXT PRIMARY KEY,
-  spins INTEGER DEFAULT 1,
-  used_by TEXT,
-  used_at INTEGER
-);
-`);
-
-// если база уже существовала со старой схемой — добавляем колонку
-try { db.exec('ALTER TABLE users ADD COLUMN goal_bonus INTEGER DEFAULT 0'); } catch (e) {}
 
 // ====== ХЕЛПЕРЫ ======
 function verifyInitData(initData) {
@@ -80,28 +47,42 @@ function verifyInitData(initData) {
   }
 }
 
-function getUser(telegramId) {
-  return db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(String(telegramId));
+async function getUser(telegramId) {
+  const { data } = await supabase
+    .from('users').select('*').eq('telegram_id', String(telegramId)).maybeSingle();
+  return data || null;
 }
 
-function ensureUser(tgUser, chatId) {
+async function ensureUser(tgUser, chatId) {
   const id = String(tgUser.id);
-  let u = getUser(id);
+  let u = await getUser(id);
   if (!u) {
-    db.prepare(`INSERT INTO users (telegram_id, username, chat_id, game_nick, spins, donated, goal_bonus, created_at)
-      VALUES (?, ?, ?, NULL, 0, 0, 0, ?)`)
-      .run(id, tgUser.username || (tgUser.first_name || ''), chatId || null, Date.now());
-    u = getUser(id);
+    u = {
+      telegram_id: id,
+      username: tgUser.username || tgUser.first_name || '',
+      chat_id: chatId || null,
+      game_nick: null,
+      spins: 0,
+      donated: 0,
+      goal_bonus: 0,
+      created_at: Date.now()
+    };
+    await supabase.from('users').insert(u);
   } else if (chatId && !u.chat_id) {
-    db.prepare('UPDATE users SET chat_id = ? WHERE telegram_id = ?').run(String(chatId), id);
-    u = getUser(id);
+    u.chat_id = String(chatId);
+    await supabase.from('users').update({ chat_id: u.chat_id }).eq('telegram_id', id);
   }
   return u;
 }
 
-function syncUserToDB(u) {
-  db.prepare('UPDATE users SET spins = ?, donated = ?, game_nick = ?, username = ?, goal_bonus = ? WHERE telegram_id = ?')
-    .run(u.spins, u.donated, u.game_nick, u.username, u.goal_bonus || 0, String(u.telegram_id));
+async function saveUser(u) {
+  await supabase.from('users').update({
+    spins: u.spins,
+    donated: u.donated,
+    game_nick: u.game_nick,
+    username: u.username,
+    goal_bonus: u.goal_bonus || 0
+  }).eq('telegram_id', String(u.telegram_id));
 }
 
 // Сумма доната -> крутки (по пакетам, снизу вверх)
@@ -120,10 +101,11 @@ function spinsForAmount(amount) {
 }
 
 // Бонус за достижение цели 10000 ₽ (один раз на игрока)
-function grantGoalBonus(u) {
-  if (u.donated >= PROGRESS_GOAL && !u.goal_bonus) {
+async function grantGoalBonus(u) {
+  if (Number(u.donated) >= PROGRESS_GOAL && !u.goal_bonus) {
     u.goal_bonus = 1;
-    u.spins += GOAL_BONUS_SPINS;
+    u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
+    await saveUser(u);
     sendTelegramMessage(u.chat_id,
       `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
     return true;
@@ -146,59 +128,62 @@ async function sendTelegramMessage(chatId, text) {
 app.post('/api/me', async (req, res) => {
   const tgUser = verifyInitData(req.body.initData);
   if (!tgUser) return res.json({ ok: false, error: 'auth' });
-  const u = ensureUser(tgUser, null);
+  const u = await ensureUser(tgUser, null);
 
   if (req.body.gameNick) {
     u.game_nick = String(req.body.gameNick).slice(0, 40);
-    syncUserToDB(u);
+    await saveUser(u);
   }
 
-  const rankRow = db.prepare(
-    'SELECT COUNT(*) + 1 AS rank FROM users WHERE donated > ?'
-  ).get(u.donated);
-  const totalRow = db.prepare('SELECT COUNT(*) AS total FROM users WHERE donated > 0').get();
+  const { count: above } = await supabase
+    .from('users').select('telegram_id', { count: 'exact', head: true })
+    .gt('donated', Number(u.donated));
+  const { count: total } = await supabase
+    .from('users').select('telegram_id', { count: 'exact', head: true })
+    .gt('donated', 0);
 
   res.json({
     ok: true,
-    spins: u.spins,
-    donated: u.donated,
+    spins: Number(u.spins),
+    donated: Number(u.donated),
     gameNick: u.game_nick,
-    rank: rankRow.rank,
-    totalPlayers: totalRow.total
+    rank: (above || 0) + 1,
+    totalPlayers: total || 0
   });
 });
 
-app.post('/api/spin', (req, res) => {
+app.post('/api/spin', async (req, res) => {
   const tgUser = verifyInitData(req.body.initData);
   if (!tgUser) return res.json({ ok: false, error: 'auth', message: 'Ошибка авторизации' });
-  const u = ensureUser(tgUser, null);
+  const u = await ensureUser(tgUser, null);
 
-  if (u.spins <= 0) {
+  if (Number(u.spins) <= 0) {
     return res.json({ ok: false, error: 'no_spins', message: 'Нет взрывов! Задонать и крути 💣' });
   }
 
-  u.spins -= 1;
-  syncUserToDB(u);
+  u.spins = Number(u.spins) - 1;
+  await saveUser(u);
 
   res.json({ ok: true, spinsLeft: u.spins });
 });
 
-app.post('/api/redeem-promo', (req, res) => {
+app.post('/api/redeem-promo', async (req, res) => {
   const tgUser = verifyInitData(req.body.initData);
   if (!tgUser) return res.json({ ok: false, error: 'auth' });
-  const u = ensureUser(tgUser, null);
+  const u = await ensureUser(tgUser, null);
 
   const code = String(req.body.code || '').trim().toUpperCase();
   if (!code) return res.json({ ok: false, error: 'not_found' });
 
-  const promo = db.prepare('SELECT * FROM promos WHERE code = ?').get(code);
+  const { data: promo } = await supabase.from('promos').select('*').eq('code', code).maybeSingle();
   if (!promo) return res.json({ ok: false, error: 'not_found' });
   if (promo.used_by) return res.json({ ok: false, error: 'used' });
 
-  db.prepare('UPDATE promos SET used_by = ?, used_at = ? WHERE code = ?')
-    .run(String(u.telegram_id), Date.now(), code);
-  u.spins += promo.spins;
-  syncUserToDB(u);
+  await supabase.from('promos')
+    .update({ used_by: String(u.telegram_id), used_at: Date.now() })
+    .eq('code', code);
+  u.spins = Number(u.spins) + (promo.spins || 1);
+  await saveUser(u);
 
   res.json({ ok: true, spins: u.spins });
 });
@@ -214,65 +199,72 @@ app.get('/admin', (req, res) => {
   res.send(getAdminHtml());
 });
 
-app.get('/api/admin/data', (req, res) => {
+app.get('/api/admin/data', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const users = db.prepare('SELECT * FROM users ORDER BY donated DESC, spins DESC').all();
-  const unrecognized = db.prepare(
-    'SELECT * FROM donations WHERE recognized = 0 ORDER BY ts DESC LIMIT 20'
-  ).all();
-  const lastDonation = db.prepare(
-    'SELECT * FROM donations ORDER BY ts DESC LIMIT 1'
-  ).get();
-  const promos = db.prepare('SELECT * FROM promos ORDER BY rowid DESC LIMIT 20').all();
-  const totalDonated = db.prepare('SELECT SUM(donated) AS s FROM users').get().s || 0;
+
+  const { data: users } = await supabase
+    .from('users').select('*').order('donated', { ascending: false });
+  const { data: unrecognized } = await supabase
+    .from('donations').select('*').eq('recognized', 0)
+    .order('ts', { ascending: false }).limit(20);
+  const { data: lastDonation } = await supabase
+    .from('donations').select('*').order('ts', { ascending: false }).limit(1);
+  const { data: promos } = await supabase
+    .from('promos').select('*').order('code', { ascending: true }).limit(50);
+
+  const totalDonated = (users || []).reduce((s, u) => s + Number(u.donated || 0), 0);
+
   res.json({
     ok: true,
-    users: users.map(u => ({
+    users: (users || []).map(u => ({
       telegram_id: u.telegram_id, username: u.username, game_nick: u.game_nick,
       spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus
     })),
-    unrecognized,
-    lastDonation,
-    promos,
+    unrecognized: unrecognized || [],
+    lastDonation: (lastDonation && lastDonation[0]) || null,
+    promos: promos || [],
     totalDonated
   });
 });
 
-app.post('/api/admin/add-spins', (req, res) => {
+app.post('/api/admin/add-spins', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const u = getUser(req.body.telegramId);
+  const u = await getUser(req.body.telegramId);
   if (!u) return res.json({ ok: false, error: 'no_user' });
-  u.spins += parseInt(req.body.amount, 10) || 0;
-  syncUserToDB(u);
+  u.spins = Number(u.spins) + (parseInt(req.body.amount, 10) || 0);
+  await saveUser(u);
   res.json({ ok: true, spins: u.spins });
 });
 
-app.post('/api/admin/create-promo', (req, res) => {
+app.post('/api/admin/create-promo', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const code = String(req.body.code || '').trim().toUpperCase().slice(0, 12);
   if (!code) return res.json({ ok: false });
   const spins = parseInt(req.body.spins, 10) || 1;
-  try {
-    db.prepare('INSERT INTO promos (code, spins) VALUES (?, ?)').run(code, spins);
-    res.json({ ok: true });
-  } catch (e) {
-    res.json({ ok: false, error: 'exists' });
-  }
+  const { error } = await supabase.from('promos').insert({ code, spins });
+  res.json({ ok: !error, error: error ? 'exists' : undefined });
 });
 
-app.post('/api/admin/resolve-donation', (req, res) => {
+app.post('/api/admin/resolve-donation', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const d = db.prepare('SELECT * FROM donations WHERE id = ?').get(req.body.donationId);
+
+  const { data: d } = await supabase.from('donations')
+    .select('*').eq('id', req.body.donationId).maybeSingle();
   if (!d) return res.json({ ok: false, error: 'no_donation' });
-  const u = getUser(req.body.telegramId);
+
+  const u = await getUser(req.body.telegramId);
   if (!u) return res.json({ ok: false, error: 'no_user' });
-  const spins = spinsForAmount(d.amount);
-  u.spins += spins;
-  u.donated += d.amount;
-  grantGoalBonus(u);
-  syncUserToDB(u);
-  db.prepare('UPDATE donations SET recognized = 1, telegram_id = ?, spins_added = ? WHERE id = ?')
-    .run(String(u.telegram_id), spins, d.id);
+
+  const spins = spinsForAmount(Number(d.amount));
+  u.spins = Number(u.spins) + spins;
+  u.donated = Number(u.donated) + Number(d.amount);
+  await grantGoalBonus(u);
+  await saveUser(u);
+
+  await supabase.from('donations')
+    .update({ recognized: 1, telegram_id: String(u.telegram_id), spins_added: spins })
+    .eq('id', d.id);
+
   sendTelegramMessage(u.chat_id, `💣 Админ зачислил тебе ${spins} взрывов за донат ${d.amount} ₽!`);
   res.json({ ok: true, spins });
 });
@@ -284,8 +276,6 @@ app.get('/api/admin/test-spins', (req, res) => {
 });
 
 // ====== ПОЛУЧЕНИЕ ДОНАТОВ С DONATIONALERTS ======
-let lastDaId = null;
-
 async function pollDonations() {
   if (!DA_ACCESS_TOKEN) return;
   try {
@@ -294,9 +284,12 @@ async function pollDonations() {
     });
     const j = await r.json();
     const list = (j.data || []).slice().reverse(); // от старых к новым
+
     for (const d of list) {
-      if (lastDaId !== null && d.id <= lastDaId) continue;
-      lastDaId = d.id;
+      // дедупликация через базу: если донат уже записан — пропускаем
+      const { data: existing } = await supabase
+        .from('donations').select('id').eq('da_id', String(d.id)).maybeSingle();
+      if (existing) continue;
 
       const amount = parseFloat(d.amount) || 0;
       const message = d.message || '';
@@ -306,45 +299,41 @@ async function pollDonations() {
       let user = null;
       const nickMatch = message.match(/@([A-Za-z0-9_]{3,32})/);
       if (nickMatch) {
-        user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(nickMatch[1]);
+        const found = await supabase.from('users')
+          .select('*').ilike('username', nickMatch[1]).maybeSingle();
+        user = found.data;
       }
       if (!user && username) {
-        user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username);
+        const found = await supabase.from('users')
+          .select('*').ilike('username', username).maybeSingle();
+        user = found.data;
       }
 
       if (user && amount >= 100) {
         const spins = spinsForAmount(amount);
-        user.spins += spins;
-        user.donated += amount;
-        grantGoalBonus(user);
-        syncUserToDB(user);
-        db.prepare(`INSERT OR IGNORE INTO donations (da_id, amount, message, username, telegram_id, spins_added, recognized, ts)
-          VALUES (?, ?, ?, ?, ?, ?, 1, ?)`)
-          .run(String(d.id), amount, message, username, String(user.telegram_id), spins, Date.now());
+        user.spins = Number(user.spins) + spins;
+        user.donated = Number(user.donated) + amount;
+        await grantGoalBonus(user);
+
+        await supabase.from('donations').insert({
+          da_id: String(d.id), amount, message, username,
+          telegram_id: String(user.telegram_id),
+          spins_added: spins, recognized: 1, ts: Date.now()
+        });
         sendTelegramMessage(user.chat_id,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
       } else {
-        db.prepare(`INSERT OR IGNORE INTO donations (da_id, amount, message, username, telegram_id, spins_added, recognized, ts)
-          VALUES (?, ?, ?, ?, NULL, 0, 0, ?)`)
-          .run(String(d.id), amount, message, username, Date.now());
+        await supabase.from('donations').insert({
+          da_id: String(d.id), amount, message, username,
+          telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
+        });
       }
     }
   } catch (e) { /* повторим на следующем опросе */ }
 }
 
-// запоминаем последний id доната при старте, чтобы не зачислять старые повторно
-async function initDaPointer() {
-  if (!DA_ACCESS_TOKEN) return;
-  try {
-    const r = await fetch('https://www.donationalerts.com/api/v1/donations?sort=id_desc&limit=1', {
-      headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
-    });
-    const j = await r.json();
-    if (j.data && j.data.length) lastDaId = j.data[0].id;
-  } catch (e) { /* стартуем с null */ }
-}
-initDaPointer();
 setInterval(pollDonations, 30000); // каждые 30 секунд
+pollDonations();
 
 // ====== СТРАНИЦА АДМИНКИ ======
 function getAdminHtml() {
