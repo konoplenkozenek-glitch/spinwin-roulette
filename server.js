@@ -18,15 +18,15 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
-const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || ''; // чат группы для уведомлений админу
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || '';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== НАСТРОЙКИ ======
-const PROGRESS_GOAL = 10000;   // цель прогресс-бара, ₽
-const GOAL_BONUS_SPINS = 5;    // сколько взрывов за достижение цели
+const PROGRESS_GOAL = 10000;
+const GOAL_BONUS_SPINS = 5;
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
@@ -114,7 +114,6 @@ async function saveUser(u) {
   }).eq('telegram_id', String(u.telegram_id));
 }
 
-// Сумма доната -> взрывы (по пакетам, снизу вверх)
 function spinsForAmount(amount) {
   let remaining = amount;
   let total = 0;
@@ -129,19 +128,28 @@ function spinsForAmount(amount) {
   return total;
 }
 
-// Бонус за достижение цели 10000 ₽ (один раз на игрока)
 async function grantGoalBonus(u) {
   if (Number(u.donated) >= PROGRESS_GOAL && !u.goal_bonus) {
     u.goal_bonus = 1;
     u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
     await saveUser(u);
-    sendTelegramMessage(u.chat_id,
-      `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
+    notifyUser(u, `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
     sendTelegramMessage(GROUP_CHAT_ID,
       `🎉 <b>${u.username || u.telegram_id}</b> закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
     return true;
   }
   return false;
+}
+
+// личное сообщение: chat_id или (как фолбэк) telegram_id
+async function notifyUser(u, text) {
+  const target = u.chat_id || u.telegram_id;
+  const ok = await sendTelegramMessage(target, text);
+  if (!ok) {
+    console.log('TG: не смог отправить личное сообщение игроку ' +
+      (u.username || u.telegram_id) + ' — пусть нажмёт Start у бота');
+  }
+  return ok;
 }
 
 async function sendTelegramMessage(chatId, text) {
@@ -187,7 +195,8 @@ app.post('/api/me', async (req, res) => {
     donated: Number(u.donated),
     gameNick: u.game_nick,
     rank: (above || 0) + 1,
-    totalPlayers: total || 0
+    totalPlayers: total || 0,
+    hasChat: Boolean(u.chat_id)
   });
 });
 
@@ -203,14 +212,12 @@ app.post('/api/spin', async (req, res) => {
   u.spins = Number(u.spins) - 1;
   await saveUser(u);
 
-  // случайный приз из списка
   const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
   const name = u.game_nick || u.username || ('id' + u.telegram_id);
   console.log('Взрыв: игрок ' + name + ' (' + u.telegram_id + ') -> ' + prize.name);
 
-  // уведомление игроку в личку (если бот знает его чат)
-  sendTelegramMessage(u.chat_id,
-    `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
+  // уведомление игроку
+  notifyUser(u, `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
   // уведомление в группу админа
   sendTelegramMessage(GROUP_CHAT_ID,
     `🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
@@ -237,7 +244,7 @@ app.post('/api/redeem-promo', async (req, res) => {
   u.spins = Number(u.spins) + (promo.spins || 1);
   await saveUser(u);
 
-  sendTelegramMessage(u.chat_id, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
+  notifyUser(u, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -271,7 +278,8 @@ app.get('/api/admin/data', async (req, res) => {
     ok: true,
     users: (users || []).map(u => ({
       telegram_id: u.telegram_id, username: u.username, game_nick: u.game_nick,
-      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus, chat_id: u.chat_id
+      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus,
+      chat_id: u.chat_id, hasChat: Boolean(u.chat_id)
     })),
     unrecognized: unrecognized || [],
     lastDonation: (lastDonation && lastDonation[0]) || null,
@@ -280,7 +288,6 @@ app.get('/api/admin/data', async (req, res) => {
   });
 });
 
-// корректировка игрока: взрывы, донат, ник в игре
 app.post('/api/admin/update-user', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const u = await getUser(req.body.telegramId);
@@ -302,7 +309,6 @@ app.post('/api/admin/add-spins', async (req, res) => {
   res.json({ ok: true, spins: u.spins });
 });
 
-// генерация промокода со случайным кодом
 app.post('/api/admin/generate-promo', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const spins = parseInt(req.body.spins, 10) || 1;
@@ -347,46 +353,46 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
     .update({ recognized: 1, telegram_id: String(u.telegram_id), spins_added: spins })
     .eq('id', d.id);
 
-  sendTelegramMessage(u.chat_id, `💣 Админ зачислил тебе ${spins} взрывов за донат ${d.amount} ₽!`);
+  notifyUser(u, `💣 Админ зачислил тебе ${spins} взрывов за донат ${d.amount} ₽!`);
   res.json({ ok: true, spins });
 });
 
-// рассылка всем игрокам, у кого известен chat_id
 app.post('/api/admin/broadcast', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const text = String(req.body.text || '').trim();
   if (!text) return res.json({ ok: false });
 
   const { data: users } = await supabase
-    .from('users').select('chat_id').not('chat_id', 'is', null);
+    .from('users').select('chat_id, telegram_id');
   let sent = 0;
   for (const u of (users || [])) {
-    const ok = await sendTelegramMessage(u.chat_id, text);
+    const ok = await sendTelegramMessage(u.chat_id || u.telegram_id, text);
     if (ok) sent++;
-    await new Promise(r => setTimeout(r, 100)); // не долбить API
+    await new Promise(r => setTimeout(r, 100));
   }
   res.json({ ok: true, sent });
 });
 
-// ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
+// ====== СБОР CHAT_ID ЧЕРЕЗ БОТА (только личные чаты) ======
 let tgOffset = 0;
+let getUpdatesBroken = false;
 async function pollBotUpdates() {
-  if (!BOT_TOKEN) return;
+  if (!BOT_TOKEN || getUpdatesBroken) return;
   try {
     const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${tgOffset}&timeout=0`);
     const j = await r.json();
     if (!j.ok) {
-      // 409 — у бота стоит webhook, getUpdates недоступен
-      if (j.error_code === 409 && !pollBotUpdates._warned) {
-        pollBotUpdates._warned = true;
-        console.log('TG: у бота активен webhook, getUpdates не работает — chat_id собираются только из группы');
+      if (j.error_code === 409 && !getUpdatesBroken) {
+        getUpdatesBroken = true;
+        console.log('TG: у бота активен webhook — chat_id собираются только через Start игроков');
       }
       return;
     }
     for (const upd of (j.result || [])) {
       if (upd.update_id >= tgOffset) tgOffset = upd.update_id + 1;
       const msg = upd.message;
-      if (msg && msg.from && msg.chat) {
+      // сохраняем chat_id ТОЛЬКО из личных сообщений игроку
+      if (msg && msg.from && msg.chat && msg.chat.type === 'private') {
         const u = await getUser(msg.from.id);
         if (u && String(u.chat_id || '') !== String(msg.chat.id)) {
           await supabase.from('users')
@@ -413,9 +419,8 @@ async function pollDonations() {
     }
     const j1 = await r1.json();
     const batches = [j1.data || []];
-    // если страниц несколько — берём ещё последнюю (там свежие донаты)
     if (j1.meta && j1.meta.last_page > 1) {
-      await new Promise(res => setTimeout(res, 1100)); // лимит DA: 1 запрос в секунду
+      await new Promise(res => setTimeout(res, 1100));
       const r2 = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=' + j1.meta.last_page, {
         headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
       });
@@ -427,7 +432,6 @@ async function pollDonations() {
     const list = batches.flat();
 
     for (const d of list) {
-      // дедупликация через базу: если донат уже записан — пропускаем
       const { data: existing } = await supabase
         .from('donations').select('id').eq('da_id', String(d.id)).maybeSingle();
       if (existing) continue;
@@ -437,7 +441,6 @@ async function pollDonations() {
       const username = d.username || '';
       console.log('DA: новый донат ' + amount + ' ₽ от ' + (username || '?') + ' — сообщение: "' + message + '"');
 
-      // ищем игрока по @нику в сообщении или по username
       let user = null;
       const nickMatch = message.match(/@([A-Za-z0-9_]{3,32})/);
       if (nickMatch) {
@@ -463,7 +466,7 @@ async function pollDonations() {
           spins_added: spins, recognized: 1, ts: Date.now()
         });
         console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
-        sendTelegramMessage(user.chat_id,
+        notifyUser(user,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
         sendTelegramMessage(GROUP_CHAT_ID,
           `💰 Донат ${amount} ₽ от <b>${user.username || user.telegram_id}</b> — зачислено ${spins} взрывов.`);
@@ -480,7 +483,7 @@ async function pollDonations() {
   } catch (e) { /* повторим на следующем опросе */ }
 }
 
-setInterval(pollDonations, 30000); // каждые 30 секунд
+setInterval(pollDonations, 30000);
 pollDonations();
 
 // ====== СТРАНИЦА АДМИНКИ ======
@@ -532,7 +535,7 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 <div id="promos">—</div>
 <h2>📣 Рассылка</h2>
 <div class="row" style="flex-direction:column;align-items:stretch;max-width:600px">
-  <textarea id="bcText" rows="3" placeholder="Текст сообщения всем игрокам (у кого бот знает чат)"></textarea>
+  <textarea id="bcText" rows="3" placeholder="Текст сообщения всем игрокам"></textarea>
   <div><button onclick="broadcast()">Отправить всем</button> <span class="muted" id="bcResult"></span></div>
 </div>
 <div id="toast"></div>
@@ -548,7 +551,8 @@ async function load(){
   const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка ключа'; return; }
   USERS = j.users;
-  document.getElementById('stats').textContent = 'Всего задонатили: ' + fmt(j.totalDonated) + ' ₽ · игроков: ' + j.users.length;
+  const withChat = j.users.filter(function(u){return u.hasChat}).length;
+  document.getElementById('stats').textContent = 'Всего задонатили: ' + fmt(j.totalDonated) + ' ₽ · игроков: ' + j.users.length + ' · уведомления включили: ' + withChat;
 
   const fill = document.getElementById('progFill');
   const label = document.getElementById('progLabel');
@@ -593,9 +597,10 @@ function renderUsers(){
     (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
     String(u.telegram_id).indexOf(q) >= 0);
   document.getElementById('users').innerHTML = list.length
-    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
+    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
       list.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
-      '</td><td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
+      '</td><td>' + (u.hasChat ? '🔔' : '🔕') + '</td>' +
+      '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
       '<td><input id="dn' + u.telegram_id + '" type="number" value="' + u.donated + '" style="width:70px"></td>' +
       '<td>' + (u.goal_bonus ? '✅' : '—') + '</td><td>' +
       '<button onclick="saveUser(\\'' + u.telegram_id + '\\')">Сохранить</button> ' +
