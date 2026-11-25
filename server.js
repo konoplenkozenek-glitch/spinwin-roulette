@@ -29,6 +29,26 @@ const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
 const DA_REDIRECT_URI = process.env.DA_REDIRECT_URI || `${PUBLIC_URL}/da/callback`
 
+// === Пакеты круток: чем больше донат — тем выгоднее ===
+// Порядок важен: от большего к меньшему, сработает первый подходящий пакет
+const PACKAGES = [
+  { min: 1000, per: 1000, spins: 15 }, // 1000 ₽ → 15 круток
+  { min: 300,  per: 300,  spins: 4 },  // 300 ₽ → 4 крутки
+  { min: 100,  per: 100,  spins: 1 }   // 100 ₽ → 1 крутка
+]
+
+function spinsForAmount(amount) {
+  for (const p of PACKAGES) {
+    if (amount >= p.min) {
+      const base = Math.floor(amount / p.per) * p.spins
+      const rest = amount % p.per
+      const restSpins = Math.floor(rest / RUB_PER_SPIN)
+      return base + restSpins
+    }
+  }
+  return 0 // меньше 100 ₽ — круток нет
+}
+
 // === Supabase ===
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -412,7 +432,8 @@ app.post('/api/redeem-promo', async (req, res) => {
     const p = promos.find(x => x.code === code)
     if (p) { p.used_by = tgId; p.used_at = new Date().toISOString() }
 
-    notifyOwner(`🎟 Промокод ${code} активировал @${user.username || user.name} (+${PROMO_SPINS} крутка)`)
+    const word = PROMO_SPINS === 1 ? 'ВЗРЫВ' : `${PROMO_SPINS} ВЗРЫВОВ`
+    notifyOwner(`🎟 Промокод ${code} активировал @${user.username || user.name} (+${word})`)
     res.json({ ok: true, spins: user.spins })
   } catch (e) {
     console.error('Promo redeem error:', e.message)
@@ -438,7 +459,7 @@ app.post('/api/spin', async (req, res) => {
   const tgId = String(tgUser.id)
   const user = getUser(tgId, tgUser)
   if (user.spins <= 0) {
-    return res.status(400).json({ ok: false, error: 'no_spins', message: 'Нет круток. Задонать на DonationAlerts — 100 ₽ = 1 крутка!' })
+    return res.status(400).json({ ok: false, error: 'no_spins', message: 'Нет круток. Задонать на DonationAlerts — 100 ₽ = 1 крутка, 300 ₽ = 4, 1000 ₽ = 15!' })
   }
 
   user.spins -= 1
@@ -508,7 +529,7 @@ a{color:#7ab7ff}
     <button class="gold" onclick="genPromo()">🎲 Сгенерировать промокод</button>
     <span id="promomsg"></span>
   </div>
-  <p class="small">Нажми на золотой код — он скопируется целиком (только сам код). Вставь в чат: кто первый введёт — тому крутка.</p>
+  <p class="small">Нажми на золотой код — он скопируется целиком (только сам код). Вставь в чат: кто первый введёт — тому ВЗРЫВ 💥</p>
   <table id="promo"></table>
 </div>
 </div>
@@ -704,7 +725,7 @@ app.post('/api/admin/assign-pending', async (req, res) => {
   const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
   if (!entryKey) return res.status(404).json({ ok: false, error: 'user_not_found', message: 'Игрок не найден' })
 
-  const spins = Math.floor(entry.amount / RUB_PER_SPIN)
+  const spins = spinsForAmount(entry.amount)
   users[entryKey].spins += spins
   users[entryKey].donated += entry.amount
   pendingDonations.splice(pendingDonations.indexOf(entry), 1)
@@ -789,7 +810,7 @@ async function pollDonations() {
 
       const user = findUserByDonation(norm(nick), message)
       if (user) {
-        const spins = Math.floor(amount / RUB_PER_SPIN)
+        const spins = spinsForAmount(amount)
         if (spins > 0) {
           user.spins += spins
           user.donated += amount
