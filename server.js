@@ -68,6 +68,7 @@ async function syncWinToDB(tgId, tgName, gameNick, prize) {
 async function loadDataFromDB() {
   if (!supabase) return
   try {
+    // 1. Загружаем пользователей
     const { data: dbUsers } = await supabase.from('roulette_users').select('*')
     if (dbUsers) {
       dbUsers.forEach(u => {
@@ -77,7 +78,26 @@ async function loadDataFromDB() {
         }
       })
     }
-    console.log('✅ Данные загружены из Supabase')
+    
+    // 2. Загружаем историю для админки (последние 500)
+    const { data: dbWins } = await supabase
+      .from('roulette_history')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500)
+      
+    if (dbWins) {
+      dbWins.reverse().forEach(w => {
+        winsLog.push({
+          tgId: String(w.user_id),
+          tgName: w.username,
+          gameNick: '',
+          prize: w.prize,
+          at: new Date(w.created_at).getTime()
+        })
+      })
+    }
+    console.log('✅ Данные и история загружены из Supabase')
   } catch (e) { console.error('Ошибка загрузки:', e.message) }
 }
 loadDataFromDB()
