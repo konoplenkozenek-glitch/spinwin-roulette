@@ -22,6 +22,8 @@ const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || ''
 const RUB_PER_SPIN = parseFloat(process.env.RUB_PER_SPIN || '100')
 const PROMO_SPINS = parseInt(process.env.PROMO_SPINS || '1', 10)
 const DAILY_PROMO = (process.env.DAILY_PROMO || 'true').toLowerCase() === 'true'
+const DAILY_PROMO_MIN_HOUR = parseInt(process.env.DAILY_PROMO_MIN_HOUR || '10', 10)
+const DAILY_PROMO_MAX_HOUR = parseInt(process.env.DAILY_PROMO_MAX_HOUR || '22', 10)
 const DA_CLIENT_ID = process.env.DA_CLIENT_ID || ''
 const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
@@ -167,29 +169,62 @@ loadDataFromDB()
 loadDaTokens()
 loadPromos()
 
-// === Ежедневный промокод ===
+// === Ежедневный промокод в случайное время ===
 async function maybeGenerateDailyPromo() {
   if (!DAILY_PROMO || !supabase) return
   try {
-    const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10) // дата по МСК
-    const { data: meta } = await supabase.from('app_meta').select('*').eq('key', 'last_daily_promo').maybeSingle()
-    if (meta && meta.value === today) return
+    const mskNow = new Date(Date.now() + 3 * 60 * 60 * 1000)
+    const today = mskNow.toISOString().slice(0, 10)
+    const minutesNow = mskNow.getUTCHours() * 60 + mskNow.getUTCMinutes()
+
+    const { data: meta } = await supabase
+      .from('app_meta')
+      .select('*')
+      .eq('key', 'last_daily_promo')
+      .maybeSingle()
+
+    let day = '', scheduled = -1, sent = false
+    if (meta && meta.value) {
+      const parts = meta.value.split('|')
+      if (parts.length === 1) {
+        day = parts[0]
+        sent = true // старый формат = «на эту дату код уже ушёл»
+      } else {
+        day = parts[0]
+        scheduled = parseInt(parts[1], 10)
+        sent = parts[2] === '1'
+      }
+    }
+
+    if (day !== today) {
+      const min = DAILY_PROMO_MIN_HOUR * 60
+      const max = DAILY_PROMO_MAX_HOUR * 60
+      scheduled = min + Math.floor(Math.random() * (max - min + 1))
+      const newValue = `${today}|${scheduled}|0`
+      if (meta) {
+        await supabase.from('app_meta').update({ value: newValue }).eq('key', 'last_daily_promo')
+      } else {
+        await supabase.from('app_meta').insert([{ key: 'last_daily_promo', value: newValue }])
+      }
+      console.log(`🎟 Дневной промокод запланирован на ${String(Math.floor(scheduled / 60)).padStart(2, '0')}:${String(scheduled % 60).padStart(2, '0')} МСК`)
+      return
+    }
+
+    if (sent || minutesNow < scheduled) return
 
     const code = 'SPIN' + crypto.randomBytes(3).toString('hex').toUpperCase()
     const { error: insErr } = await supabase.from('promo_codes').insert([{ code }])
     if (insErr) throw insErr
     promos.push({ code, used_by: null, used_at: null })
 
-    if (meta) {
-      await supabase.from('app_meta').update({ value: today }).eq('key', 'last_daily_promo')
-    } else {
-      await supabase.from('app_meta').insert([{ key: 'last_daily_promo', value: today }])
-    }
+    await supabase.from('app_meta').update({ value: `${today}|${scheduled}|1` }).eq('key', 'last_daily_promo')
 
     notifyOwner(`🎟 Дневной промокод создан: ${code}`)
     sendToGroup(`🎰 Дневной промокод! 🎟\n\nКод: ${code}\n\nКто первый введёт его в рулетке — получит ${PROMO_SPINS} крутку! Код одноразовый, успей первым! 🏁`)
     console.log(`🎟 Дневной промокод создан: ${code}`)
-  } catch (e) { console.error('Daily promo error:', e.message) }
+  } catch (e) {
+    console.error('Daily promo error:', e.message)
+  }
 }
 setInterval(maybeGenerateDailyPromo, 10 * 60 * 1000)
 
@@ -782,7 +817,6 @@ async function pollDonations() {
 }
 setInterval(pollDonations, 20000)
 setTimeout(pollDonations, 5000)
-setTimeout(maybeGenerateDailyPromo, 20000)
 
 app.use('/', express.static(path.join(__dirname, 'public')))
 
