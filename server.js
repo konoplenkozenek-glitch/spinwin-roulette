@@ -301,12 +301,13 @@ app.post('/api/me', async (req, res) => {
 app.post('/api/redeem-promo', async (req, res) => {
   if (!BOT_TOKEN && !ALLOW_DEV) return res.status(400).json({ ok: false, error: 'Server not configured' })
   let tgUser = null
-  if (BOT_TOKEN && !ALLOW_DEV) {
+  if (BOT_TOKEN) {
     tgUser = verifyInitData(req.body && req.body.initData)
-    if (!tgUser) return res.status(403).json({ ok: false, error: 'auth_failed' })
-  } else {
+  }
+  if (!tgUser && ALLOW_DEV) {
     tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
   }
+  if (!tgUser) return res.status(403).json({ ok: false, error: 'auth_failed' })
 
   const code = String((req.body && req.body.code) || '').trim().toUpperCase()
   if (!/^[A-Z0-9]{4,12}$/.test(code)) return res.status(400).json({ ok: false, error: 'bad_code' })
@@ -399,7 +400,7 @@ app.get('/admin', (req, res) => {
 </div>
 <h2>Промокоды (на 1 человека)</h2>
 <button class="gold" onclick="genPromo()">🎲 Сгенерировать промокод</button><span id="promomsg"></span>
-<p class="small">Нажми — «Промокод: …» скопируется в буфер. Вставь в чат: игроки вводят код в рулетке, кто первый — тому взрыв.</p>
+<p class="small">Нажми — «Промокод: …» скопируется в буфер. Вставь в чат: игроки вводят код в рулетке, кто первый — тому крутка.</p>
 <table id="promo"></table>
 <h2>Журнал выигрышей</h2><table id="log"></table>
 <button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
