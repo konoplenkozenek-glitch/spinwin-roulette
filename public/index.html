@@ -154,10 +154,13 @@
 
   /* Фаза подготовки: трясётся, искра бешено скачет, фитиль догорает */
   .bomb-stage.arming .bomb-wrap { animation: armShake .16s linear infinite; }
-  .bomb-stage.arming .spark { animation-duration: .12s; }
+  .bomb-stage.arming .spark {
+    animation-name: sparkle, sparkFall;
+    animation-duration: .12s, 3s;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, forwards;
+  }
   .bomb-stage.arming .fuse { animation: fuseBurn 3s linear forwards; }
-  .bomb-stage.arming .spark { animation: sparkFall .12s infinite alternate, sparkle .12s infinite alternate; top: -50px; }
-  .bomb-stage.arming .spark { animation-name: sparkle, sparkFall; animation-duration: .12s, 3s; animation-iteration-count: infinite, 1; animation-fill-mode: none, forwards; }
 
   @keyframes armShake {
     0%, 100% { transform: translate(0,0) rotate(0); }
@@ -434,25 +437,25 @@
 
   <div class="result" id="result"></div>
 
-  <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
+  <button class="btn btn-spin" id="spinBtn" onclick="spin()">💣 Взорвать!</button>
   
   <button class="btn btn-nick" onclick="changeNick()">✏️ Сменить игровой ник</button>
 
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
-    💸 Задонать 100 ₽ = 1 прокрутка
+    💸 Задонать 100 ₽ = 1 взрыв
     <small>в сообщении к донату напиши свой @ник</small>
   </a>
 
   <div class="glass text-block">
     <h3>📌 Как играть</h3>
     <ul>
-      <li>Нажми «Крутить!» — так ты регистрируешься.</li>
-      <li>Донат: 100 ₽ = 1 прокрутка.</li>
+      <li>Нажми «Взорвать!» — так ты регистрируешься.</li>
+      <li>Донат: 100 ₽ = 1 взрыв.</li>
     </ul>
-    <div class="alert-box">❗ ВАЖНО: в сообщении к донату напиши свой @ник из Telegram. Без него прокрутки не зачислятся!</div>
-    <div class="alert-box">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку.</div>
+    <div class="alert-box">❗ ВАЖНО: в сообщении к донату напиши свой @ник из Telegram. Без него взрывы не зачислятся!</div>
+    <div class="alert-box">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой игру.</div>
     <ul>
-      <li>Прокрутки придут автоматически за 1–2 минуты.</li>
+      <li>Взрывы придут автоматически за 1–2 минуты.</li>
       <li>Ошибся в нике? Нажми «Сменить игровой ник».</li>
     </ul>
   </div>
@@ -560,13 +563,13 @@ async function loadBalance() {
             fetch('/api/me', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData: tg.initData || '', gameNick: gameNickSaved }) });
           }
         }
-        elBalance.innerHTML = `Привет, <b>${j.name}</b>!<br>Прокрутов: <b style="color:#FFD700">${j.spins}</b>` + (gameNickSaved ? `<br>Ник: ${gameNickSaved}` : '');
+        elBalance.innerHTML = `Привет, <b>${j.name}</b>!<br>Взрывов: <b style="color:#FFD700">${j.spins}</b>` + (gameNickSaved ? `<br>Ник: ${gameNickSaved}` : '');
         return;
       }
     } catch (e) {}
     await new Promise(r => setTimeout(r, 1500));
   }
-  elBalance.textContent = '⚠️ Сервер спит. Нажми «Крутить!», чтобы разбудить.';
+  elBalance.textContent = '⚠️ Сервер спит. Нажми «Взорвать!», чтобы разбудить.';
 }
 
 async function changeNick() {
@@ -647,7 +650,7 @@ function explode(j) {
   const serverPrizeName = j.prize.label;
 
   elResult.className = 'result win';
-  elResult.innerHTML = `🎁 Выпало: <b>${serverPrizeName}</b><br>Осталось: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
+  elResult.innerHTML = `🎁 Выпало: <b>${serverPrizeName}</b><br>Осталось взрывов: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
 
   // Модалка с призом — чуть позже взрыва
   setTimeout(() => {
@@ -666,7 +669,7 @@ function dud(j) {
 
   let msg;
   if (j.error === 'no_spins') {
-    msg = `😕 Бомба не взорвалась — нет прокрутов.<br>Задонать 100 ₽ = 1 прокрутка!`;
+    msg = `😕 Бомба не взорвалась — нет взрывов.<br>Задонать 100 ₽ = 1 взрыв!`;
   } else if (j.error === 'network') {
     msg = '⚠️ Ошибка сети.';
   } else {
