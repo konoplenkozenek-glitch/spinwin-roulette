@@ -279,11 +279,27 @@ app.get('/api/admin/test-spins', (req, res) => {
 async function pollDonations() {
   if (!DA_ACCESS_TOKEN) return;
   try {
-    const r = await fetch('https://www.donationalerts.com/api/v1/donations?sort=id_desc&limit=10', {
+    const r1 = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=1', {
       headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
     });
-    const j = await r.json();
-    const list = (j.data || []).slice().reverse(); // от старых к новым
+    if (!r1.ok) {
+      console.log('DA API ответил ' + r1.status + ' — проверь токен DA_ACCESS_TOKEN и скоуп oauth-donation-index');
+      return;
+    }
+    const j1 = await r1.json();
+    const batches = [j1.data || []];
+    // если страниц несколько — берём ещё последнюю (там свежие донаты)
+    if (j1.meta && j1.meta.last_page > 1) {
+      await new Promise(res => setTimeout(res, 1100)); // лимит DA: 1 запрос в секунду
+      const r2 = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=' + j1.meta.last_page, {
+        headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
+      });
+      if (r2.ok) {
+        const j2 = await r2.json();
+        batches.push(j2.data || []);
+      }
+    }
+    const list = batches.flat();
 
     for (const d of list) {
       // дедупликация через базу: если донат уже записан — пропускаем
@@ -350,9 +366,21 @@ td,th{border:1px solid #333;padding:6px 8px;text-align:left}
 th{background:#222;color:#FFD700}
 button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-weight:bold;cursor:pointer}
 .muted{color:#888;font-size:12px}
+.progress-wrap{margin:14px 0 4px}
+.progress-bar{height:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.4);border-radius:10px;overflow:hidden}
+.progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);box-shadow:0 0 10px rgba(255,215,0,.5);transition:width .6s ease}
+.progress-fill.done{background:linear-gradient(90deg,#3ddc84,#aef7cf)}
+.progress-label{font-size:12px;color:#b8a878;margin-top:5px}
+.progress-label.done{color:#3ddc84;font-weight:bold}
 </style></head><body>
 <h1>🛠 Админка — Золотая Удача</h1>
 <div class="muted" id="stats"></div>
+
+<div class="progress-wrap">
+  <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
+  <div class="progress-label" id="progLabel"></div>
+</div>
+
 <h2>💵 Последний донат</h2><div id="lastDonation">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
 <h2>👥 Игроки</h2><div id="users">—</div>
@@ -363,11 +391,28 @@ button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-we
 <div id="promos">—</div>
 <script>
 const KEY = new URLSearchParams(location.search).get('key');
+const GOAL = 10000;
 async function load(){
   const r = await fetch('/api/admin/data?key=' + KEY);
   const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка ключа'; return; }
   document.getElementById('stats').textContent = 'Всего задонатили: ' + j.totalDonated + ' ₽ · игроков: ' + j.users.length;
+
+  const fill = document.getElementById('progFill');
+  const label = document.getElementById('progLabel');
+  const pct = Math.min(Math.round(j.totalDonated / GOAL * 100), 100);
+  fill.style.width = pct + '%';
+  if (j.totalDonated >= GOAL) {
+    fill.classList.add('done');
+    label.textContent = '🎉 Цель ' + GOAL.toLocaleString('ru-RU') + ' ₽ собрана!';
+    label.classList.add('done');
+  } else {
+    fill.classList.remove('done');
+    label.classList.remove('done');
+    label.textContent = 'Поступления: ' + j.totalDonated.toLocaleString('ru-RU') + ' из ' +
+      GOAL.toLocaleString('ru-RU') + ' ₽ (' + pct + '%)';
+  }
+
   const ld = j.lastDonation;
   document.getElementById('lastDonation').innerHTML = ld
     ? ld.amount + ' ₽ от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' круток' +
