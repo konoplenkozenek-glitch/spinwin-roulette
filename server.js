@@ -65,6 +65,49 @@ async function syncWinToDB(tgId, tgName, gameNick, prize) {
   } catch (e) { console.error('Win log error:', e.message) }
 }
 
+// === Токен DonationAlerts: загрузка и сохранение в Supabase ===
+async function loadDaTokens() {
+  if (!supabase) return
+  try {
+    const { data, error } = await supabase
+      .from('da_tokens')
+      .select('*')
+      .eq('id', 1)
+      .limit(1)
+    if (error) throw error
+    if (data && data.length) {
+      daTokens = {
+        access_token: data[0].access_token,
+        refresh_token: data[0].refresh_token,
+        expires_at: data[0].expires_at || 0
+      }
+      console.log('[DA] токен загружен из БД')
+    } else {
+      console.log('[DA] токена в БД нет — нужна авторизация /da/auth')
+    }
+  } catch (e) {
+    console.error('[DA] ошибка загрузки токена:', e.message)
+  }
+}
+
+async function saveDaTokens() {
+  if (!supabase) return
+  try {
+    const { error } = await supabase
+      .from('da_tokens')
+      .upsert({
+        id: 1,
+        access_token: daTokens.access_token,
+        refresh_token: daTokens.refresh_token,
+        expires_at: daTokens.expires_at
+      })
+    if (error) throw error
+    console.log('[DA] токен сохранён в БД')
+  } catch (e) {
+    console.error('[DA] ошибка сохранения токена:', e.message)
+  }
+}
+
 async function loadDataFromDB() {
   if (!supabase) return
   try {
@@ -78,14 +121,14 @@ async function loadDataFromDB() {
         }
       })
     }
-    
+
     // 2. Загружаем историю для админки (последние 500)
     const { data: dbWins } = await supabase
       .from('roulette_history')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(500)
-      
+
     if (dbWins) {
       dbWins.reverse().forEach(w => {
         winsLog.push({
@@ -101,6 +144,7 @@ async function loadDataFromDB() {
   } catch (e) { console.error('Ошибка загрузки:', e.message) }
 }
 loadDataFromDB()
+loadDaTokens()
 
 function getUser(tgId, initDataUser) {
   if (!users[tgId]) {
@@ -209,7 +253,7 @@ app.post('/api/me', async (req, res) => {
 
   const tgId = String(tgUser.id)
   const user = getUser(tgId, tgUser)
-  
+
   const gameNick = String((req.body && req.body.gameNick) || '').trim()
   if (gameNick && !user.gameNick) {
     user.gameNick = gameNick.slice(0, 40)
@@ -246,7 +290,7 @@ app.post('/api/spin', async (req, res) => {
 
   user.spins -= 1
   const { index, prize } = pickPrize()
-  
+
   const tgName = '@' + (user.username || user.name)
   winsLog.push({ tgId, tgName, gameNick: user.gameNick || '', prize: prize.label, at: Date.now() })
   if (winsLog.length > 500) winsLog.shift()
@@ -318,13 +362,13 @@ app.post('/api/admin/add-spins', async (req, res) => {
   const uname = norm(req.body && req.body.uname)
   const count = parseInt(req.body && req.body.count, 10)
   if (!uname || !(count > 0)) return res.status(400).json({ ok: false, error: 'bad_params' })
-  
+
   const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
   if (!entryKey) return res.status(404).json({ ok: false, error: 'not_found', message: 'Игрок не найден' })
-  
+
   users[entryKey].spins += count
   await syncUserToDB(entryKey, users[entryKey])
-  
+
   res.json({ ok: true, spins: users[entryKey].spins })
 })
 
@@ -334,7 +378,7 @@ app.post('/api/admin/assign-pending', async (req, res) => {
   const uname = norm(req.body && req.body.uname)
   const entry = pendingDonations.find(p => p.id === id)
   if (!entry) return res.status(404).json({ ok: false, error: 'donation_not_found' })
-  
+
   const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
   if (!entryKey) return res.status(404).json({ ok: false, error: 'user_not_found', message: 'Игрок не найден' })
 
@@ -342,9 +386,9 @@ app.post('/api/admin/assign-pending', async (req, res) => {
   users[entryKey].spins += spins
   users[entryKey].donated += entry.amount
   pendingDonations.splice(pendingDonations.indexOf(entry), 1)
-  
+
   await syncUserToDB(entryKey, users[entryKey])
-  
+
   res.json({ ok: true, spins: users[entryKey].spins, credited: spins })
 })
 
@@ -363,6 +407,7 @@ app.get('/da/callback', async (req, res) => {
     const j = await r.json()
     if (!j.access_token) return res.send('Ошибка обмена кода: ' + JSON.stringify(j))
     daTokens = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 }
+    await saveDaTokens()
     res.send('✅ DonationAlerts подключен!')
   } catch (e) { res.send('Ошибка: ' + e.message) }
 })
@@ -377,6 +422,7 @@ async function getAccessToken() {
     const j = await r.json()
     if (!j.access_token) return null
     daTokens = { access_token: j.access_token, refresh_token: j.refresh_token || daTokens.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 }
+    await saveDaTokens()
     return daTokens.access_token
   } catch (e) { return null }
 }
@@ -411,10 +457,10 @@ async function pollDonations() {
         if (spins > 0) {
           user.spins += spins
           user.donated += amount
-          
+
           const userKey = Object.keys(users).find(k => users[k] === user)
           if(userKey) await syncUserToDB(userKey, user)
-          
+
           notifyOwner(`💰 Донат ${amount} ₽ от «${nick}» → @${user.username || user.name}: +${spins} круток`)
         } else {
           pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
