@@ -387,25 +387,76 @@ app.get('/admin', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).send('Доступ запрещён. Добавь в адрес ?key=твой_ключ')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Панель рулетки</title>
-<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}a{color:#7ab7ff}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}.tops{display:flex;gap:20px;flex-wrap:wrap}.topcard{flex:1;min-width:280px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px}.topcard h3{margin:0 0 8px;font-size:15px;color:#FFD700}.topcard ol{margin:0;padding-left:22px}.topcard li{margin:4px 0}.lastdon{background:#1a2a1a;border:1px solid #3ddc84;border-radius:8px;padding:12px;margin:10px 0;font-size:14px}.reset{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:12px}.gold{background:#4a3a00;color:#FFD700;border:1px solid #FFD700;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold}.small{font-size:12px;color:#888}</style></head><body>
+<style>
+*{box-sizing:border-box}
+body{font-family:sans-serif;background:#111;color:#eee;margin:10px;font-size:13px}
+h1{font-size:18px;margin:6px 0}
+h2{font-size:14px;margin:14px 0 6px;color:#FFD700;border-bottom:1px solid #333;padding-bottom:3px}
+table{border-collapse:collapse;width:100%;margin:6px 0}
+td,th{border:1px solid #333;padding:4px 8px;font-size:12px;text-align:left}
+th{background:#1a1a1a;color:#aaa}
+input,button{padding:5px 8px;font-size:12px;margin:2px}
+a{color:#7ab7ff}
+.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:6px 12px;border-radius:6px;cursor:pointer}
+.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:6px 12px;border-radius:6px;cursor:pointer}
+.gold{background:#4a3a00;color:#FFD700;border:1px solid #FFD700;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold}
+.reset{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:2px 6px;border-radius:4px;cursor:pointer;font-size:11px}
+.small{font-size:11px;color:#888;margin:4px 0}
+.copycode{color:#FFD700;font-weight:bold;cursor:pointer;text-decoration:underline;user-select:all}
+.lastdon{background:#1a2a1a;border:1px solid #3ddc84;border-radius:6px;padding:8px;margin:6px 0;font-size:12px}
+.tops{display:flex;gap:12px;flex-wrap:wrap}
+.topcard{flex:1;min-width:260px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px}
+.topcard h3{margin:0 0 6px;font-size:12px;color:#FFD700}
+.topcard ol{margin:0;padding-left:18px}
+.topcard li{margin:2px 0}
+.grid2{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.grid2>div{flex:1;min-width:300px}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+</style></head><body>
 <h1>🎰 Панель рулетки</h1>
-<h2>Начислить крутки вручную</h2>
-<input id="uname" placeholder="@username или имя в ТГ"><input id="cnt" type="number" value="1" style="width:60px" placeholder="круток">
-<button onclick="addSpins()">Начислить</button><span id="msg"></span>
-<h2>Последний донат</h2><div class="lastdon" id="lastdon">— пока донатов с последнего рестарта не было —</div>
-<h2>Балансы круток</h2><table id="bal"></table>
+
+<div class="grid2">
+<div>
+  <h2>Крутки вручную</h2>
+  <div class="row">
+    <input id="uname" placeholder="@username или имя в ТГ" style="flex:1;min-width:160px">
+    <input id="cnt" type="number" value="1" style="width:50px">
+    <button onclick="addSpins()">Начислить</button>
+    <span id="msg"></span>
+  </div>
+  <h2>Последний донат</h2>
+  <div class="lastdon" id="lastdon">— пока донатов с последнего рестарта не было —</div>
+</div>
+<div>
+  <h2>Промокоды (на 1 человека)</h2>
+  <div class="row">
+    <button class="gold" onclick="genPromo()">🎲 Сгенерировать промокод</button>
+    <span id="promomsg"></span>
+  </div>
+  <p class="small">Нажми на золотой код — он скопируется целиком (только сам код). Вставь в чат: кто первый введёт — тому крутка.</p>
+  <table id="promo"></table>
+</div>
+</div>
+
+<h2>Балансы круток</h2>
+<table id="bal"></table>
+
 <div class="tops">
   <div class="topcard"><h3>💸 Топ-5 по донатам</h3><ol id="topDon"></ol></div>
   <div class="topcard"><h3>🎰 Топ-5 по круткам</h3><ol id="topSpins"></ol></div>
 </div>
-<h2>Промокоды (на 1 человека)</h2>
-<button class="gold" onclick="genPromo()">🎲 Сгенерировать промокод</button><span id="promomsg"></span>
-<p class="small">Нажми — «Промокод: …» скопируется в буфер. Вставь в чат: игроки вводят код в рулетке, кто первый — тому крутка.</p>
-<table id="promo"></table>
-<h2>Журнал выигрышей</h2><table id="log"></table>
-<button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
-<button class="danger" onclick="clearHistory()">🧹 Очистить журнал выигрышей</button><span id="clrmsg"></span>
-<h2>Нераспознанные донаты</h2><table id="pend"></table>
+
+<h2>Журнал выигрышей</h2>
+<table id="log"></table>
+<div class="row">
+  <button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
+  <button class="danger" onclick="clearHistory()">🧹 Очистить журнал выигрышей</button>
+  <span id="clrmsg"></span>
+</div>
+
+<h2>Нераспознанные донаты</h2>
+<table id="pend"></table>
+
 <script>
 const KEY = location.search;
 let allWins = [];
@@ -425,7 +476,7 @@ async function load(){
   document.getElementById('topDon').innerHTML = topD.length ? topD.map(u=>'<li>'+u.name+' — <b>'+fmt(u.donated)+' ₽</b></li>').join('') : '<li>пока пусто</li>';
   document.getElementById('topSpins').innerHTML = topS.length ? topS.map(u=>'<li>'+u.name+' — <b>'+u.spins+'</b></li>').join('') : '<li>пока пусто</li>';
   document.getElementById('promo').innerHTML = '<tr><th>Код</th><th>Статус</th><th></th></tr>' +
-    (j.promos.length ? j.promos.map(p => '<tr><td><b>'+p.code+'</b></td><td>'+(p.used_by ? '✅ использован' : '<b>активен</b>')+'</td><td><button class="reset" onclick="delPromo(\\''+p.code+'\\')">Удалить</button></td></tr>').join('') : '<tr><td colspan="3">промокодов нет</td></tr>');
+    (j.promos.length ? j.promos.map(p => '<tr><td><b class="copycode" onclick="copyCode(\\''+p.code+'\\')">'+p.code+'</b></td><td>'+(p.used_by ? '✅ использован' : '<b>активен</b>')+'</td><td><button class="reset" onclick="delPromo(\\''+p.code+'\\')">Удалить</button></td></tr>').join('') : '<tr><td colspan="3">промокодов нет</td></tr>');
   allWins = j.wins;
   renderLog();
   document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th></th></tr>' +
@@ -442,13 +493,24 @@ function showMore(){ shownCount += 30; renderLog(); }
 async function genPromo(){
   const r = await fetch('/api/admin/gen-promo' + KEY, { method:'POST' });
   const j = await r.json();
+  const msgEl = document.getElementById('promomsg');
   if (j.ok && j.code) {
-    const text = 'Промокод: ' + j.code;
-    let copied = false;
-    try { await navigator.clipboard.writeText(text); copied = true; } catch(e){}
-    document.getElementById('promomsg').textContent = copied ? ' ✅ Скопировано: ' + text + ' — вставь в чат' : ' ✅ Код: ' + j.code;
-  } else document.getElementById('promomsg').textContent = ' ❌ ' + (j.error||'');
+    msgEl.innerHTML = 'Промокод: <span class="copycode" onclick="copyCode(\\''+j.code+'\\')">'+j.code+'</span>';
+  } else msgEl.textContent = ' ❌ ' + (j.error||'');
   load();
+}
+function copyCode(code){
+  const done = ok => { document.getElementById('promomsg').textContent = ok ? ' ✅ Скопирован код: ' + code : ' ⚠️ Не вышло. Код: ' + code; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(() => done(true)).catch(() => fallbackCopy(code, done));
+  else fallbackCopy(code, done);
+}
+function fallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+  done(ok);
 }
 async function delPromo(code){
   if (!confirm('Удалить промокод ' + code + '?')) return;
