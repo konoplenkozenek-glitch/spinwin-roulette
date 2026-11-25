@@ -220,7 +220,8 @@ async function maybeGenerateDailyPromo() {
     await supabase.from('app_meta').update({ value: `${today}|${scheduled}|1` }).eq('key', 'last_daily_promo')
 
     notifyOwner(`🎟 Дневной промокод создан: ${code}`)
-    sendToGroup(`🎰 Дневной промокод! 🎟\n\nКод: ${code}\n\nКто первый введёт его в рулетке — получит ${PROMO_SPINS} крутку! Код одноразовый, успей первым! 🏁`)
+    const word = PROMO_SPINS === 1 ? 'ВЗРЫВ' : `${PROMO_SPINS} ВЗРЫВОВ`
+    sendToGroup(`🎰 Дневной промокод! 🎟\n\nКод: ${code}\n\nКто первый введёт его в рулетке — получит ${word} 💥! Код одноразовый, успей первым! 🏁`)
     console.log(`🎟 Дневной промокод создан: ${code}`)
   } catch (e) {
     console.error('Daily promo error:', e.message)
