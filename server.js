@@ -13,23 +13,26 @@ const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
 
-// ====== НАСТРОЙКИ ПАКЕТОВ И ПРИЗОВ ======
+// ====== НАСТРОЙКИ ПАКЕТОВ, ПРИЗОВ И ЦЕЛИ ======
+const PROGRESS_GOAL = 10000;   // цель прогресс-бара, ₽
+const GOAL_BONUS_SPINS = 5;    // сколько взрывов за достижение цели
+
 const PACKAGES = [
   { amount: 100,  spins: 1 },
   { amount: 300,  spins: 4 },
   { amount: 1000, spins: 13 }
 ];
 
+// NB: названия призов поправь под свои реальные награды
 const PRIZES = [
-  { label: 'Пусто 💨',            color: '#888888', weight: 30 },
-  { label: '+1 взрыв 💣',          color: '#3ddc84', weight: 20, bonusSpins: 1 },
-  { label: '+2 взрыва 💣💣',       color: '#3ddc84', weight: 10, bonusSpins: 2 },
-  { label: 'Корм x10 🪱',          color: '#8bc34a', weight: 15 },
-  { label: 'Снасть 🔧',            color: '#4fc3f7', weight: 12 },
-  { label: 'Наживка x5 🦗',        color: '#4fc3f7', weight: 8 },
-  { label: 'Супер-приз 🏆',        color: '#FFD700', weight: 5 }
+  { label: 'Пусто 💨',     color: '#888888', weight: 30 },
+  { label: '+1 взрыв 💣',  color: '#3ddc84', weight: 20, bonusSpins: 1 },
+  { label: '+2 взрыва 💣💣', color: '#3ddc84', weight: 10, bonusSpins: 2 },
+  { label: 'Снасть 🔧',    color: '#4fc3f7', weight: 12 },
+  { label: 'Наживка x5 🦗', color: '#4fc3f7', weight: 8 },
+  { label: 'Супер-приз 🏆', color: '#FFD700', weight: 5 }
 ];
-// ========================================
+// ==============================================
 
 // ====== БАЗА ======
 const db = new Database('roulette.db');
@@ -43,6 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
   game_nick TEXT,
   spins INTEGER DEFAULT 0,
   donated REAL DEFAULT 0,
+  goal_bonus INTEGER DEFAULT 0,
   created_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS donations (
@@ -69,6 +73,9 @@ CREATE TABLE IF NOT EXISTS wins (
   ts INTEGER
 );
 `);
+
+// если база уже существовала со старой схемой — добавляем колонку
+try { db.exec('ALTER TABLE users ADD COLUMN goal_bonus INTEGER DEFAULT 0'); } catch (e) {}
 
 // ====== ХЕЛПЕРЫ ======
 function verifyInitData(initData) {
@@ -97,8 +104,8 @@ function ensureUser(tgUser, chatId) {
   const id = String(tgUser.id);
   let u = getUser(id);
   if (!u) {
-    db.prepare(`INSERT INTO users (telegram_id, username, chat_id, game_nick, spins, donated, created_at)
-      VALUES (?, ?, ?, NULL, 0, 0, ?)`)
+    db.prepare(`INSERT INTO users (telegram_id, username, chat_id, game_nick, spins, donated, goal_bonus, created_at)
+      VALUES (?, ?, ?, NULL, 0, 0, 0, ?)`)
       .run(id, tgUser.username || (tgUser.first_name || ''), chatId || null, Date.now());
     u = getUser(id);
   } else if (chatId && !u.chat_id) {
@@ -109,8 +116,8 @@ function ensureUser(tgUser, chatId) {
 }
 
 function syncUserToDB(u) {
-  db.prepare('UPDATE users SET spins = ?, donated = ?, game_nick = ?, username = ? WHERE telegram_id = ?')
-    .run(u.spins, u.donated, u.game_nick, u.username, String(u.telegram_id));
+  db.prepare('UPDATE users SET spins = ?, donated = ?, game_nick = ?, username = ?, goal_bonus = ? WHERE telegram_id = ?')
+    .run(u.spins, u.donated, u.game_nick, u.username, u.goal_bonus || 0, String(u.telegram_id));
 }
 
 // Сумма доната -> крутки (по пакетам, снизу вверх)
@@ -126,6 +133,18 @@ function spinsForAmount(amount) {
     }
   }
   return total;
+}
+
+// Бонус за достижение цели 10000 ₽ (один раз на игрока)
+function grantGoalBonus(u) {
+  if (u.donated >= PROGRESS_GOAL && !u.goal_bonus) {
+    u.goal_bonus = 1;
+    u.spins += GOAL_BONUS_SPINS;
+    sendTelegramMessage(u.chat_id,
+      `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
+    return true;
+  }
+  return false;
 }
 
 function pickPrize() {
@@ -153,16 +172,6 @@ async function sendTelegramMessage(chatId, text) {
 // ====== API МИНИ-АППА ======
 app.get('/api/prizes', (req, res) => {
   res.json({ ok: true, prizes: PRIZES.map(p => ({ label: p.label, color: p.color })) });
-});
-
-app.get('/api/leaderboard', (req, res) => {
-  const top = db.prepare(
-    'SELECT username, game_nick, donated FROM users WHERE donated > 0 ORDER BY donated DESC LIMIT 5'
-  ).all();
-  res.json({
-    ok: true,
-    top: top.map((u, i) => ({ name: u.game_nick || u.username || 'Игрок ' + (i + 1), donated: u.donated }))
-  });
 });
 
 app.post('/api/me', async (req, res) => {
@@ -257,7 +266,7 @@ app.get('/api/admin/data', (req, res) => {
     ok: true,
     users: users.map(u => ({
       telegram_id: u.telegram_id, username: u.username, game_nick: u.game_nick,
-      spins: u.spins, donated: u.donated
+      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus
     })),
     unrecognized,
     lastDonation,
@@ -297,6 +306,7 @@ app.post('/api/admin/resolve-donation', (req, res) => {
   const spins = spinsForAmount(d.amount);
   u.spins += spins;
   u.donated += d.amount;
+  grantGoalBonus(u);
   syncUserToDB(u);
   db.prepare('UPDATE donations SET recognized = 1, telegram_id = ?, spins_added = ? WHERE id = ?')
     .run(String(u.telegram_id), spins, d.id);
@@ -306,7 +316,7 @@ app.post('/api/admin/resolve-donation', (req, res) => {
 
 app.get('/api/admin/test-spins', (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  const samples = [100, 300, 500, 1000, 1300, 2000];
+  const samples = [100, 300, 500, 1000, 1300, 2000, 10000];
   res.json({ ok: true, packages: PACKAGES, samples: samples.map(a => ({ amount: a, spins: spinsForAmount(a) })) });
 });
 
@@ -343,6 +353,7 @@ async function pollDonations() {
         const spins = spinsForAmount(amount);
         user.spins += spins;
         user.donated += amount;
+        grantGoalBonus(user);
         syncUserToDB(user);
         db.prepare(`INSERT OR IGNORE INTO donations (da_id, amount, message, username, telegram_id, spins_added, recognized, ts)
           VALUES (?, ?, ?, ?, ?, ?, 1, ?)`)
@@ -417,9 +428,9 @@ async function load(){
         ' <button onclick="resolve(' + d.id + ')">Зачислить</button></td></tr>').join('') + '</table>'
     : 'Нет нераспознанных донатов 👌';
   document.getElementById('users').innerHTML =
-    '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>Взрывы</th><th>Донат</th><th>+взрывы</th></tr>' +
+    '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>+взрывы</th></tr>' +
     j.users.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
-      '</td><td>' + u.spins + '</td><td>' + u.donated + ' ₽</td><td>' +
+      '</td><td>' + u.spins + '</td><td>' + u.donated + ' ₽</td><td>' + (u.goal_bonus ? '✅' : '—') + '</td><td>' +
       '<input id="sp' + u.telegram_id + '" type="number" value="1" style="width:50px">' +
       ' <button onclick="addSpins(\\'' + u.telegram_id + '\\')">Начислить</button></td></tr>').join('') + '</table>';
   document.getElementById('promos').innerHTML = j.promos.length
