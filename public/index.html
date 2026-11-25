@@ -15,8 +15,6 @@
     --gold: #FFD700;
     --fire: #ff4500;
     --bg: #0a0703;
-    --glass: rgba(255, 255, 255, 0.05);
-    --glass-border: rgba(255, 215, 0, 0.2);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -104,13 +102,13 @@
     height: 50%;
     left: 50%;
     top: 0;
-    transform-origin: 0% 100%; /* Вращение вокруг центра колеса */
+    transform-origin: 0% 100%;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start; /* Текст прижат к внешнему краю */
+    justify-content: flex-start;
     align-items: center;
     pointer-events: none;
-    padding-top: 10px; /* Отступ от края колеса */
+    padding-top: 15px; /* Отступ от края */
   }
 
   /* Текст внутри сектора */
@@ -120,10 +118,11 @@
     color: #fff;
     text-shadow: 1px 1px 2px #000, 0 0 4px #000;
     text-align: center;
-    width: 80px; /* Фиксированная ширина, чтобы текст не вылезал */
+    width: 80px;
     line-height: 1.1;
     word-break: break-word;
-    /* Никаких rotate(180deg) — текст идет от центра к краю */
+    /* Текст развернут так, чтобы читаться сверху вниз (от края к центру) */
+    transform: rotate(180deg); 
   }
 
   /* Кнопки */
@@ -442,7 +441,6 @@ function drawWheel() {
     
     const segment = document.createElement('div');
     segment.className = 'wheel-segment';
-    // Центрируем сектор
     segment.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
     
     const span = document.createElement('span');
