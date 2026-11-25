@@ -13,7 +13,6 @@
 <style>
   :root {
     --gold: #FFD700;
-    --gold-dark: #D4AF37;
     --bg: #0a0703;
     --glass: rgba(255, 255, 255, 0.05);
     --glass-border: rgba(255, 215, 0, 0.2);
@@ -57,18 +56,6 @@
   .star.right { animation: spin 3s linear infinite reverse; }
   @keyframes spin { 100% { transform: rotate(360deg); } }
 
-  .glass {
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
-    padding: 15px;
-    margin: 0 auto 15px;
-    max-width: 400px;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-  }
-
   .balance { 
     font-size: 14px; 
     color: #ffe9a8; 
@@ -79,8 +66,8 @@
   /* КОЛЕСО */
   .wheel-container {
     position: relative;
-    width: 300px;
-    height: 300px;
+    width: 340px;
+    height: 340px;
     margin: 0 auto 25px;
   }
 
@@ -92,7 +79,7 @@
     box-shadow: 0 0 25px rgba(255, 215, 0, 0.4), inset 0 0 15px rgba(0,0,0,0.8);
     position: relative;
     overflow: hidden;
-    transition: transform 6s cubic-bezier(0.15, 0.9, 0.2, 1);
+    transition: transform 7s cubic-bezier(0.1, 0.9, 0.2, 1); /* Долгая плавная остановка */
   }
 
   .pointer {
@@ -107,6 +94,44 @@
     border-top: 35px solid #FFD700;
     z-index: 10;
     filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5));
+  }
+
+  /* Контейнер сектора */
+  .wheel-segment {
+    position: absolute;
+    width: 50%;
+    height: 50%;
+    left: 50%;
+    top: 0;
+    transform-origin: 0% 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    pointer-events: none;
+    padding-top: 10px; /* Отступ от края */
+  }
+
+  /* Картинка внутри сектора */
+  .wheel-segment img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,0.6));
+    margin-bottom: 2px;
+  }
+
+  /* Текст внутри сектора */
+  .wheel-segment span {
+    font-size: 8px; /* Мелкий шрифт для 18 секторов */
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 1px 1px 2px #000, 0 0 4px #000;
+    text-align: center;
+    max-width: 55px;
+    line-height: 1;
+    word-break: break-word;
+    transform: rotate(180deg); /* Переворачиваем текст для читаемости */
   }
 
   /* Кнопки */
@@ -233,7 +258,6 @@
   
   <div class="balance" id="balance">Загружаем...</div>
 
-  <!-- Новое колесо -->
   <div class="wheel-container">
     <div class="pointer"></div>
     <div class="wheel" id="wheel"></div>
@@ -269,7 +293,6 @@
     <ul id="prizeList"></ul>
   </div>
 
-  <!-- Всплывающее окно с призом -->
   <div id="winModal" class="modal">
     <div class="modal-content">
       <h2>Поздравляем!</h2>
@@ -280,22 +303,32 @@
   </div>
 
 <script>
-// ==========================================
-// ВАШИ ПРИЗЫ (Обязательно допишите остальные!)
-// ==========================================
+// =======================================================
+// СПИСОК ВСЕХ 18 ПРИЗОВ (Названия файлов должны точно совпадать с теми, что в папке images!)
+// =======================================================
 const prizes = [
-  { name: 'Кофе за 500', img: 'images/coffee500.png' },
-  { name: 'Алкоголь', img: 'images/alcohol.png' },
-  { name: 'Выбор байта', img: 'images/bait_choice.png' },
-  { name: 'Байт 5', img: 'images/bait5.png' },
-  { name: 'Бокоплав 10', img: 'images/bokoplav10.png' },
-  // СЮДА ДОБАВЬТЕ ОСТАЛЬНЫЕ 13 ШТУК:
-  // { name: 'Название 6', img: 'images/file6.png' },
-  // { name: 'Название 7', img: 'images/file7.png' },
+  { name: 'Любая наживка 5 шт', img: 'images/bait5.png' },
+  { name: 'Приманки на выбор', img: 'images/bait_choice.png' },
+  { name: '1 бутылка алкоголя', img: 'images/alcohol.png' },
+  { name: 'Кофе 500', img: 'images/coffee500.png' },
+  { name: 'Кофе 1000', img: 'images/coffee1000.png' },
+  { name: 'Золотая монета 1 шт', img: 'images/gold_coin1.png' },
+  { name: 'Премиум 3 дня', img: 'images/premium3.png' },
+  { name: 'Майка 10 шт', img: 'images/tshirt10.png' },
+  { name: 'Нос 10 шт', img: 'images/nose10.png' },
+  { name: 'Бокоплав 10 шт', img: 'images/bokoplav10.png' },
+  { name: 'Медведка 10 шт', img: 'images/medvedka10.png' },
+  { name: 'Дрейсена 10 шт', img: 'images/dreissena10.png' },
+  { name: 'Перловица 10 шт', img: 'images/perlovitsa10.png' },
+  { name: 'Сбитень 10 шт', img: 'images/sbiten10.png' },
+  { name: 'Золотая монета 2 шт', img: 'images/gold_coin2.png' },
+  { name: 'Премиум 7 дней', img: 'images/premium7.png' },
+  { name: 'Премиум 30 дней', img: 'images/premium30.png' },
+  { name: 'Venga II 10k', img: 'images/venga10k.png' }
 ];
-// ==========================================
+// =======================================================
 
-const colors = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#e67e22', '#1abc9c'];
+const colors = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#c0392b', '#16a085', '#8e44ad', '#d35400', '#27ae60', '#2980b9', '#8e44ad', '#f39c12', '#16a085', '#c0392b', '#2ecc71'];
 
 const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
 const tg = window.Telegram.WebApp;
@@ -336,7 +369,7 @@ function createParticles() {
 }
 createParticles();
 
-// Отрисовка колеса
+// Отрисовка колеса (18 секторов с картинками)
 function drawWheel() {
   const totalPrizes = prizes.length;
   const anglePerPrize = 360 / totalPrizes;
@@ -349,19 +382,23 @@ function drawWheel() {
     const color = colors[index % colors.length];
     gradientStr.push(`${color} ${startAngle}deg ${endAngle}deg`);
     
-    const textElement = document.createElement('div');
-    textElement.style.position = 'absolute';
-    textElement.style.width = '50%'; textElement.style.height = '50%';
-    textElement.style.left = '50%'; textElement.style.top = '0';
-    textElement.style.transformOrigin = '0% 100%';
-    textElement.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
-    textElement.style.display = 'flex'; textElement.style.justifyContent = 'center'; textElement.style.alignItems = 'center';
-    textElement.style.fontSize = '10px'; textElement.style.fontWeight = 'bold';
-    textElement.style.color = '#fff'; textElement.style.textShadow = '1px 1px 3px #000';
-    textElement.style.pointerEvents = 'none'; textElement.style.paddingTop = '15px'; 
+    const segment = document.createElement('div');
+    segment.className = 'wheel-segment';
+    segment.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
     
-    textElement.innerText = prize.name;
-    elWheel.appendChild(textElement);
+    // Картинка
+    const img = document.createElement('img');
+    img.src = prize.img;
+    // Если картинка не найдена, показываем заглушку
+    img.onerror = () => { img.src = 'https://via.placeholder.com/30?text=?'; };
+    
+    // Текст
+    const span = document.createElement('span');
+    span.innerText = prize.name;
+    
+    segment.appendChild(img);
+    segment.appendChild(span);
+    elWheel.appendChild(segment);
   });
 
   elWheel.style.background = `conic-gradient(${gradientStr.join(', ')})`;
@@ -428,12 +465,10 @@ async function spin() {
   elResult.style.display = 'none';
   elSpinBtn.disabled = true;
 
-  // Анимация кручения
   const spins = 7;
   const totalPrizes = prizes.length;
   const anglePerPrize = 360 / totalPrizes;
   
-  // Случайный индекс для предварительной анимации (сервер все равно решит судьбу)
   const randomIndex = Math.floor(Math.random() * totalPrizes);
   const targetAngle = 360 - (randomIndex * anglePerPrize) - (anglePerPrize / 2);
   
@@ -449,16 +484,14 @@ async function spin() {
     });
     const j = await r.json();
 
-    // Ждем окончания анимации (6 секунд)
     setTimeout(() => {
       if (j.ok) {
-        // Ищем картинку по названию приза, которое вернул сервер
         const serverPrizeName = j.prize.label;
+        // Ищем приз в нашем списке
         const matchedPrize = prizes.find(p => p.name.toLowerCase() === serverPrizeName.toLowerCase()) || prizes[0];
 
         winTitle.innerText = serverPrizeName;
         winImage.src = matchedPrize.img;
-        
         modal.style.display = 'flex';
 
         elResult.className = 'result win';
@@ -475,7 +508,7 @@ async function spin() {
       elSpinBtn.disabled = false;
       elResult.style.display = 'block';
       loadBalance();
-    }, 6000);
+    }, 7000); // Ожидание 7 секунд (время анимации CSS)
 
   } catch (e) {
     setTimeout(() => {
@@ -483,7 +516,7 @@ async function spin() {
       elResult.innerHTML = '⚠️ Ошибка сети.';
       elSpinBtn.disabled = false;
       elResult.style.display = 'block';
-    }, 6000);
+    }, 7000);
   }
 }
 
