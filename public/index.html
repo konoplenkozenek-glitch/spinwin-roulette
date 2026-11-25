@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>🎰 Золотая Удача</title>
+<title>💣 Золотая Удача</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -62,38 +62,184 @@
     margin-bottom: 15px;
   }
 
-  .wheel-container {
-    position: relative;
-    width: 340px;
-    height: 340px;
+  /* ============ БОМБА ============ */
+  .bomb-stage {
+    width: 300px;
+    height: 300px;
     margin: 0 auto 25px;
-  }
-
-  .wheel {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    border: 6px solid var(--gold);
-    box-shadow: 0 0 25px rgba(255, 215, 0, 0.4), inset 0 0 15px rgba(0,0,0,0.8);
     position: relative;
-    overflow: hidden;
-    transition: transform 7s cubic-bezier(0.1, 0.9, 0.2, 1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 
-  .pointer {
+  .bomb-wrap {
+    position: relative;
+    width: 160px;
+    height: 160px;
+    animation: idleFloat 3s ease-in-out infinite;
+  }
+  @keyframes idleFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  .bomb-body {
     position: absolute;
-    top: -12px;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #5a5a5a 0%, #2a2a2a 45%, #0c0c0c 80%);
+    box-shadow:
+      inset -12px -16px 30px rgba(0,0,0,.85),
+      inset 8px 10px 20px rgba(255,255,255,.07),
+      0 0 45px rgba(255,215,0,.18);
+  }
+
+  /* Блик на корпусе */
+  .bomb-body::before {
+    content: '';
+    position: absolute;
+    top: 18px; left: 28px;
+    width: 34px; height: 20px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.25);
+    filter: blur(6px);
+    transform: rotate(-20deg);
+  }
+
+  /* Металлическое основание фитиля */
+  .cap {
+    position: absolute;
+    top: -16px;
     left: 50%;
     transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 15px solid transparent;
-    border-right: 15px solid transparent;
-    border-top: 35px solid #FFD700;
-    z-index: 10;
-    filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5));
+    width: 46px;
+    height: 26px;
+    background: linear-gradient(#9a9a9a, #3a3a3a);
+    border-radius: 10px 10px 4px 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.6);
   }
 
+  /* Фитиль */
+  .fuse {
+    position: absolute;
+    top: -42px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 5px;
+    height: 28px;
+    background: linear-gradient(#d8b878, #8a6a3a);
+    border-radius: 3px;
+    transform-origin: bottom center;
+    z-index: 2;
+  }
+
+  /* Искра на кончике фитиля */
+  .spark {
+    position: absolute;
+    top: -50px;
+    left: calc(50% + 5px);
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: radial-gradient(#ffffff 0%, #ffd700 35%, #ff4500 65%, transparent 75%);
+    filter: blur(1px);
+    animation: sparkle .4s infinite alternate;
+    z-index: 3;
+  }
+  @keyframes sparkle {
+    from { transform: scale(.7); opacity: .7; }
+    to   { transform: scale(1.5); opacity: 1; }
+  }
+
+  /* Фаза подготовки: трясётся, искра бешено скачет, фитиль догорает */
+  .bomb-stage.arming .bomb-wrap { animation: armShake .16s linear infinite; }
+  .bomb-stage.arming .spark { animation-duration: .12s; }
+  .bomb-stage.arming .fuse { animation: fuseBurn 3s linear forwards; }
+  .bomb-stage.arming .spark { animation: sparkFall .12s infinite alternate, sparkle .12s infinite alternate; top: -50px; }
+  .bomb-stage.arming .spark { animation-name: sparkle, sparkFall; animation-duration: .12s, 3s; animation-iteration-count: infinite, 1; animation-fill-mode: none, forwards; }
+
+  @keyframes armShake {
+    0%, 100% { transform: translate(0,0) rotate(0); }
+    20% { transform: translate(-3px,2px) rotate(-2deg); }
+    40% { transform: translate(3px,-2px) rotate(2deg); }
+    60% { transform: translate(-2px,-2px) rotate(-1.5deg); }
+    80% { transform: translate(2px,2px) rotate(1.5deg); }
+  }
+  @keyframes fuseBurn {
+    from { height: 28px; }
+    to   { height: 4px; }
+  }
+  @keyframes sparkFall {
+    from { top: -50px; }
+    to   { top: -22px; }
+  }
+
+  /* Взрыв */
+  .bomb-wrap.boom { animation: boomAnim .45s ease-out forwards !important; }
+  @keyframes boomAnim {
+    0%   { transform: scale(1);    opacity: 1; filter: brightness(1); }
+    40%  { transform: scale(1.35); opacity: 1; filter: brightness(4); }
+    100% { transform: scale(2.2);  opacity: 0; filter: brightness(6); }
+  }
+
+  /* Осечка */
+  .bomb-wrap.dud { animation: dudAnim .8s ease-out forwards !important; }
+  .bomb-wrap.dud .spark { display: none; }
+  .bomb-wrap.dud .fuse { opacity: .3; }
+  @keyframes dudAnim {
+    0%   { transform: rotate(0); filter: brightness(1); }
+    30%  { transform: rotate(-4deg); filter: brightness(.7); }
+    60%  { transform: rotate(3deg); filter: brightness(.5); }
+    100% { transform: rotate(0); filter: brightness(.45); }
+  }
+
+  /* Ударная волна */
+  .shockwave {
+    position: absolute;
+    width: 60px; height: 60px;
+    border: 5px solid #ff4500;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .shockwave.go { animation: shockAnim .8s ease-out forwards; }
+  @keyframes shockAnim {
+    0%   { transform: scale(.4); opacity: 1; border-width: 12px; }
+    100% { transform: scale(6);  opacity: 0; border-width: 1px; }
+  }
+
+  /* Вспышка на весь экран */
+  .flash {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .flash.on { animation: flashAnim .5s ease-out; }
+  @keyframes flashAnim {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* Тряска экрана при взрыве */
+  .bomb-stage.shaking { animation: screenShake .6s linear; }
+  @keyframes screenShake {
+    0%, 100% { transform: translate(0,0); }
+    10% { transform: translate(-8px,4px); }
+    20% { transform: translate(7px,-5px); }
+    30% { transform: translate(-6px,-4px); }
+    40% { transform: translate(6px,5px); }
+    50% { transform: translate(-5px,3px); }
+    60% { transform: translate(4px,-3px); }
+    70% { transform: translate(-3px,2px); }
+    80% { transform: translate(2px,-2px); }
+    90% { transform: translate(-1px,1px); }
+  }
+
+  /* Кнопки */
   .btn {
     display: block; width: 100%; max-width: 320px;
     margin: 10px auto;
@@ -167,6 +313,7 @@
 
   .prizes-list li { color: #ffe9a8; margin-bottom: 4px; font-size: 13px; }
 
+  /* МОДАЛЬНОЕ ОКНО ВЫИГРЫША */
   .modal {
     display: none;
     position: fixed;
@@ -272,10 +419,18 @@
   
   <div class="balance" id="balance">Загружаем...</div>
 
-  <div class="wheel-container">
-    <div class="pointer"></div>
-    <div class="wheel" id="wheel"></div>
+  <div class="bomb-stage" id="bombStage">
+    <div class="bomb-wrap" id="bombWrap">
+      <div class="bomb-body">
+        <div class="cap"></div>
+        <div class="fuse" id="fuse"></div>
+        <div class="spark" id="spark"></div>
+      </div>
+    </div>
+    <div class="shockwave" id="shockwave"></div>
   </div>
+
+  <div class="flash" id="flash"></div>
 
   <div class="result" id="result"></div>
 
@@ -333,35 +488,11 @@
   </div>
 
 <script>
-const prizes = [
-  { name: 'Любая наживка 5 шт' },
-  { name: 'Приманки на выбор' },
-  { name: '1 бутылка алкоголя' },
-  { name: 'Кофе 500' },
-  { name: 'Кофе 1000' },
-  { name: 'Золотая монета 1 шт' },
-  { name: 'Премиум 3 дня' },
-  { name: 'Майка 10 шт' },
-  { name: 'Нос 10 шт' },
-  { name: 'Бокоплав 10 шт' },
-  { name: 'Медведка 10 шт' },
-  { name: 'Дрейсена 10 шт' },
-  { name: 'Перловица 10 шт' },
-  { name: 'Сбитень 10 шт' },
-  { name: 'Золотая монета 2 шт' },
-  { name: 'Премиум 7 дней' },
-  { name: 'Премиум 30 дней' },
-  { name: 'Venga II 10k' }
-];
-
-const colors = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#c0392b', '#16a085', '#8e44ad', '#d35400', '#27ae60', '#2980b9', '#8e44ad', '#f39c12', '#16a085', '#c0392b', '#2ecc71'];
-
 const DONATE_URL = 'https://www.donationalerts.com/r/evgeniy_2026';
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-const elWheel = document.getElementById('wheel');
 const elResult = document.getElementById('result');
 const elBalance = document.getElementById('balance');
 const elSpinBtn = document.getElementById('spinBtn');
@@ -369,7 +500,13 @@ const modal = document.getElementById('winModal');
 const winTitle = document.getElementById('winTitle');
 const closeModalBtn = document.getElementById('closeModalBtn');
 
-let currentRotation = 0;
+const bombStage = document.getElementById('bombStage');
+const bombWrap = document.getElementById('bombWrap');
+const flash = document.getElementById('flash');
+const shockwave = document.getElementById('shockwave');
+
+let gameNickSaved = localStorage.getItem('gameNick') || '';
+
 document.getElementById('donateBtn').href = DONATE_URL;
 
 function createParticles() {
@@ -391,48 +528,6 @@ function createParticles() {
   }
 }
 createParticles();
-
-function drawWheel() {
-  const total = prizes.length;
-  const anglePer = 360 / total;
-  const grads = [];
-  elWheel.innerHTML = '';
-
-  prizes.forEach((p, i) => {
-    const start = i * anglePer;
-    const end = (i + 1) * anglePer;
-    grads.push(`${colors[i % colors.length]} ${start}deg ${end}deg`);
-
-    const centerAngle = start + anglePer / 2;
-    const R = 125; // радиус, где стоит текст (ближе к краю)
-
-    const layer = document.createElement('div');
-    layer.style.position = 'absolute';
-    layer.style.left = '50%';
-    layer.style.top = '50%';
-    layer.style.transformOrigin = 'center';
-    // поворот на центр сектора → сдвиг наружу → текст становится вертикальным (вдоль «спицы»)
-    layer.style.transform = `rotate(${centerAngle}deg) translate(${R}px) rotate(-90deg)`;
-    layer.style.pointerEvents = 'none';
-
-    const span = document.createElement('span');
-    span.innerText = p.name;
-    span.style.fontSize = '6px';
-    span.style.fontFamily = "'Unbounded', sans-serif";
-    span.style.fontWeight = '800';
-    span.style.color = '#fff';
-    span.style.textShadow = '2px 2px 4px #000';
-    span.style.whiteSpace = 'nowrap';
-
-    layer.appendChild(span);
-    elWheel.appendChild(layer);
-  });
-
-  elWheel.style.background = `conic-gradient(${grads.join(', ')})`;
-}
-drawWheel();
-
-let gameNickSaved = localStorage.getItem('gameNick') || '';
 
 async function loadPrizes() {
   try {
@@ -488,60 +583,101 @@ async function changeNick() {
   loadBalance();
 }
 
+/* ============ ВЗРЫВ ============ */
+
+const ARM_TIME = 3000; // сколько секунд бомба "шипит" перед взрывом (в мс)
+
+function resetBomb() {
+  bombWrap.classList.remove('boom', 'dud');
+  bombStage.classList.remove('arming', 'shaking');
+}
+
 async function spin() {
   elResult.style.display = 'none';
   elSpinBtn.disabled = true;
+  resetBomb();
 
-  const spins = 7;
-  const total = prizes.length;
-  const anglePer = 360 / total;
-  
-  const randomIndex = Math.floor(Math.random() * total);
-  const targetAngle = 360 - (randomIndex * anglePer) - (anglePer / 2);
-  
-  const totalRotation = currentRotation + (360 * spins) + targetAngle;
-  elWheel.style.transform = `rotate(${totalRotation}deg)`;
-  currentRotation = totalRotation;
+  // Запрос улетает сразу, анимация идёт параллельно
+  const fetchPromise = (async () => {
+    try {
+      const r = await fetch('/api/spin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData || '' })
+      });
+      return await r.json();
+    } catch (e) {
+      return { error: 'network' };
+    }
+  })();
 
-  try {
-    const r = await fetch('/api/spin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData: tg.initData || '' })
-    });
-    const j = await r.json();
+  // Фаза 1: фитиль горит, бомба трясётся
+  bombStage.classList.add('arming');
 
-    setTimeout(() => {
-      if (j.ok) {
-        const serverPrizeName = j.prize.label;
-        
-        winTitle.innerText = serverPrizeName;
-        modal.style.display = 'flex';
+  const j = await fetchPromise;
 
-        elResult.className = 'result win';
-        elResult.innerHTML = `🎁 Выпало: <b>${serverPrizeName}</b><br>Осталось: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
-        
-        confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#FFD700', '#FF4500', '#FFFFFF', '#FF8C00'] });
-      } else if (j.error === 'no_spins') {
-        elResult.className = 'result fail';
-        elResult.innerHTML = `😕 Нет прокрутов.<br>Задонать 100 ₽ = 1 прокрутка!`;
-      } else {
-        elResult.className = 'result fail';
-        elResult.innerHTML = `⚠️ ${j.message || j.error}`;
-      }
-      elSpinBtn.disabled = false;
-      elResult.style.display = 'block';
-      loadBalance();
-    }, 7000);
+  setTimeout(() => {
+    if (j.ok) {
+      explode(j);
+    } else {
+      dud(j);
+    }
+  }, ARM_TIME);
+}
 
-  } catch (e) {
-    setTimeout(() => {
-      elResult.className = 'result fail';
-      elResult.innerHTML = '⚠️ Ошибка сети.';
-      elSpinBtn.disabled = false;
-      elResult.style.display = 'block';
-    }, 7000);
+function explode(j) {
+  bombStage.classList.remove('arming');
+  bombStage.classList.add('shaking');
+  bombWrap.classList.add('boom');
+
+  // Вспышка
+  flash.classList.add('on');
+  setTimeout(() => flash.classList.remove('on'), 600);
+
+  // Ударная волна
+  shockwave.classList.add('go');
+  setTimeout(() => shockwave.classList.remove('go'), 900);
+
+  // Конфетти в два залпа
+  confetti({ particleCount: 200, spread: 120, origin: { y: 0.5 }, colors: ['#FFD700', '#FF4500', '#FFFFFF', '#FF8C00'] });
+  setTimeout(() => {
+    confetti({ particleCount: 120, spread: 160, origin: { y: 0.4 }, colors: ['#FFD700', '#FF4500', '#FFFFFF'] });
+  }, 250);
+
+  const serverPrizeName = j.prize.label;
+
+  elResult.className = 'result win';
+  elResult.innerHTML = `🎁 Выпало: <b>${serverPrizeName}</b><br>Осталось: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
+
+  // Модалка с призом — чуть позже взрыва
+  setTimeout(() => {
+    winTitle.innerText = serverPrizeName;
+    modal.style.display = 'flex';
+    elResult.style.display = 'block';
+    elSpinBtn.disabled = false;
+    resetBomb();
+    loadBalance();
+  }, 900);
+}
+
+function dud(j) {
+  bombStage.classList.remove('arming');
+  bombWrap.classList.add('dud');
+
+  let msg;
+  if (j.error === 'no_spins') {
+    msg = `😕 Бомба не взорвалась — нет прокрутов.<br>Задонать 100 ₽ = 1 прокрутка!`;
+  } else if (j.error === 'network') {
+    msg = '⚠️ Ошибка сети.';
+  } else {
+    msg = `⚠️ ${j.message || j.error}`;
   }
+
+  elResult.className = 'result fail';
+  elResult.innerHTML = msg;
+  elResult.style.display = 'block';
+  elSpinBtn.disabled = false;
+  loadBalance();
 }
 
 closeModalBtn.addEventListener('click', () => {
