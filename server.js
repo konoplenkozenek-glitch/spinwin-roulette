@@ -19,6 +19,7 @@ const ALLOW_DEV = (process.env.ALLOW_DEV || 'true').toLowerCase() === 'true'
 const ADMIN_KEY = process.env.ADMIN_KEY || 'change-me'
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || ''
 const RUB_PER_SPIN = parseFloat(process.env.RUB_PER_SPIN || '100')
+const PROMO_SPINS = parseInt(process.env.PROMO_SPINS || '1', 10)
 const DA_CLIENT_ID = process.env.DA_CLIENT_ID || ''
 const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
@@ -35,9 +36,10 @@ const users = Object.create(null)
 const winsLog = []
 const pendingDonations = []
 const processedDonations = new Set()
+const promos = []
 let daFirstPollDone = false
 let daTokens = { access_token: null, refresh_token: null, expires_at: 0 }
-let lastDonation = null // последний распознанный донат (для админки)
+let lastDonation = null
 
 const norm = s => String(s || '').trim().toLowerCase().replace(/^@/, '')
 
@@ -109,6 +111,20 @@ async function saveDaTokens() {
   }
 }
 
+// === Промокоды ===
+async function loadPromos() {
+  if (!supabase) return
+  try {
+    const { data, error } = await supabase.from('promo_codes').select('*')
+    if (error) throw error
+    if (data) {
+      promos.length = 0
+      data.forEach(p => promos.push({ code: p.code, used_by: p.used_by, used_at: p.used_at }))
+      console.log(`✅ Промокодов загружено: ${promos.length}`)
+    }
+  } catch (e) { console.error('Ошибка загрузки промокодов:', e.message) }
+}
+
 async function loadDataFromDB() {
   if (!supabase) return
   try {
@@ -144,8 +160,10 @@ async function loadDataFromDB() {
     console.log('✅ Данные и история загружены из Supabase')
   } catch (e) { console.error('Ошибка загрузки:', e.message) }
 }
+
 loadDataFromDB()
 loadDaTokens()
+loadPromos()
 
 function getUser(tgId, initDataUser) {
   if (!users[tgId]) {
@@ -203,10 +221,8 @@ let prizes = [
 ]
 
 // === ИВЕНТ: временные шансы призов ===
-// Чтобы запустить ивент, впиши множитель нужному призу, например:
-// const PRIZE_BOOST = { prem30: 10 }  → «Премиум 30 дней» выпадает в 10 раз чаще
-// const PRIZE_BOOST = { bait5: 0.5 }  → «Любая наживка 5 шт» в 2 раза реже
-// Чтобы закончить ивент — верни строку к виду const PRIZE_BOOST = {}
+// const PRIZE_BOOST = { prem30: 10 } → «Премиум 30 дней» в 10 раз чаще
+// const PRIZE_BOOST = {} → ивент выключен
 const PRIZE_BOOST = {}
 if (PRIZE_BOOST && Object.keys(PRIZE_BOOST).length) {
   prizes.forEach(p => {
@@ -281,6 +297,53 @@ app.post('/api/me', async (req, res) => {
   })
 })
 
+// === Активация промокода вручную (одноразового) ===
+app.post('/api/redeem-promo', async (req, res) => {
+  if (!BOT_TOKEN && !ALLOW_DEV) return res.status(400).json({ ok: false, error: 'Server not configured' })
+  let tgUser = null
+  if (BOT_TOKEN && !ALLOW_DEV) {
+    tgUser = verifyInitData(req.body && req.body.initData)
+    if (!tgUser) return res.status(403).json({ ok: false, error: 'auth_failed' })
+  } else {
+    tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+  }
+
+  const code = String((req.body && req.body.code) || '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{4,12}$/.test(code)) return res.status(400).json({ ok: false, error: 'bad_code' })
+
+  if (!supabase) return res.status(500).json({ ok: false, error: 'no_db' })
+
+  try {
+    const tgId = String(tgUser.id)
+    const user = getUser(tgId, tgUser)
+
+    const { data: promo } = await supabase.from('promo_codes').select('*').eq('code', code).maybeSingle()
+    if (!promo) return res.json({ ok: false, error: 'not_found' })
+    if (promo.used_by) return res.json({ ok: false, error: 'used' })
+
+    // Захват кода: обновление сработает только если used_by ещё пуст
+    const { data: upd, error: updErr } = await supabase
+      .from('promo_codes')
+      .update({ used_by: tgId, used_at: new Date().toISOString() })
+      .eq('code', code)
+      .is('used_by', null)
+      .select()
+    if (updErr || !upd || !upd.length) return res.json({ ok: false, error: 'used' })
+
+    user.spins += PROMO_SPINS
+    await syncUserToDB(tgId, user)
+
+    const p = promos.find(x => x.code === code)
+    if (p) { p.used_by = tgId; p.used_at = new Date().toISOString() }
+
+    notifyOwner(`🎟 Промокод ${code} активировал @${user.username || user.name} (+${PROMO_SPINS} крутка)`)
+    res.json({ ok: true, spins: user.spins })
+  } catch (e) {
+    console.error('Promo redeem error:', e.message)
+    res.status(500).json({ ok: false, error: 'db_error' })
+  }
+})
+
 app.post('/api/spin', async (req, res) => {
   if (!BOT_TOKEN && !ALLOW_DEV) return res.status(400).json({ ok: false, error: 'Server not configured' })
   let tgUser = null
@@ -323,7 +386,7 @@ app.get('/admin', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).send('Доступ запрещён. Добавь в адрес ?key=твой_ключ')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Панель рулетки</title>
-<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}.tops{display:flex;gap:20px;flex-wrap:wrap}.topcard{flex:1;min-width:280px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px}.topcard h3{margin:0 0 8px;font-size:15px;color:#FFD700}.topcard ol{margin:0;padding-left:22px}.topcard li{margin:4px 0}.lastdon{background:#1a2a1a;border:1px solid #3ddc84;border-radius:8px;padding:12px;margin:10px 0;font-size:14px}.reset{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:12px}</style></head><body>
+<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}a{color:#7ab7ff}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}.tops{display:flex;gap:20px;flex-wrap:wrap}.topcard{flex:1;min-width:280px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px}.topcard h3{margin:0 0 8px;font-size:15px;color:#FFD700}.topcard ol{margin:0;padding-left:22px}.topcard li{margin:4px 0}.lastdon{background:#1a2a1a;border:1px solid #3ddc84;border-radius:8px;padding:12px;margin:10px 0;font-size:14px}.reset{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:12px}.gold{background:#4a3a00;color:#FFD700;border:1px solid #FFD700;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold}.small{font-size:12px;color:#888}</style></head><body>
 <h1>🎰 Панель рулетки</h1>
 <h2>Начислить крутки вручную</h2>
 <input id="uname" placeholder="@username или имя в ТГ"><input id="cnt" type="number" value="1" style="width:60px" placeholder="круток">
@@ -334,6 +397,10 @@ app.get('/admin', (req, res) => {
   <div class="topcard"><h3>💸 Топ-5 по донатам</h3><ol id="topDon"></ol></div>
   <div class="topcard"><h3>🎰 Топ-5 по круткам</h3><ol id="topSpins"></ol></div>
 </div>
+<h2>Промокоды (на 1 человека)</h2>
+<button class="gold" onclick="genPromo()">🎲 Сгенерировать промокод</button><span id="promomsg"></span>
+<p class="small">Нажми — «Промокод: …» скопируется в буфер. Вставь в чат: игроки вводят код в рулетке, кто первый — тому взрыв.</p>
+<table id="promo"></table>
 <h2>Журнал выигрышей</h2><table id="log"></table>
 <button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
 <button class="danger" onclick="clearHistory()">🧹 Очистить журнал выигрышей</button><span id="clrmsg"></span>
@@ -345,24 +412,21 @@ let shownCount = 30;
 async function load(){
   const r = await fetch('/api/admin/data' + KEY); const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка доступа'; return; }
-  // Последний донат
   const ld = document.getElementById('lastdon');
   ld.innerHTML = j.lastDonation
     ? '💰 <b>'+j.lastDonation.amount+' ₽</b> от «'+j.lastDonation.nick+'» → <b>'+j.lastDonation.user+'</b> · +'+j.lastDonation.spins+' круток · '+new Date(j.lastDonation.at).toLocaleTimeString()
     : '— пока донатов с последнего рестарта не было —';
-  // Балансы
   document.getElementById('bal').innerHTML = '<tr><th>Игрок (ТГ)</th><th>Игровой ник</th><th>Круток</th><th>Задонатил, ₽</th><th></th></tr>' +
     j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td><td>'+(u.uname ? '<button class="reset" onclick="resetSpins(\\''+u.uname+'\\')">Сбросить</button>' : '')+'</td></tr>').join('');
-  // Топы
   const fmt = n => Math.round(n*100)/100;
   const topD = j.users.slice().sort((a,b)=>b.donated-a.donated).filter(u=>u.donated>0).slice(0,5);
   const topS = j.users.slice().sort((a,b)=>b.spins-a.spins).filter(u=>u.spins>0).slice(0,5);
   document.getElementById('topDon').innerHTML = topD.length ? topD.map(u=>'<li>'+u.name+' — <b>'+fmt(u.donated)+' ₽</b></li>').join('') : '<li>пока пусто</li>';
   document.getElementById('topSpins').innerHTML = topS.length ? topS.map(u=>'<li>'+u.name+' — <b>'+u.spins+'</b></li>').join('') : '<li>пока пусто</li>';
-  // Журнал
+  document.getElementById('promo').innerHTML = '<tr><th>Код</th><th>Статус</th><th></th></tr>' +
+    (j.promos.length ? j.promos.map(p => '<tr><td><b>'+p.code+'</b></td><td>'+(p.used_by ? '✅ использован' : '<b>активен</b>')+'</td><td><button class="reset" onclick="delPromo(\\''+p.code+'\\')">Удалить</button></td></tr>').join('') : '<tr><td colspan="3">промокодов нет</td></tr>');
   allWins = j.wins;
   renderLog();
-  // Нераспознанные
   document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th></th></tr>' +
     (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td><button onclick="assign('+p.id+')">Начислить</button></td></tr>').join('') : '<tr><td colspan="4">пусто</td></tr>');
 }
@@ -374,6 +438,23 @@ function renderLog(){
   else { btn.style.display = 'none'; }
 }
 function showMore(){ shownCount += 30; renderLog(); }
+async function genPromo(){
+  const r = await fetch('/api/admin/gen-promo' + KEY, { method:'POST' });
+  const j = await r.json();
+  if (j.ok && j.code) {
+    const text = 'Промокод: ' + j.code;
+    let copied = false;
+    try { await navigator.clipboard.writeText(text); copied = true; } catch(e){}
+    document.getElementById('promomsg').textContent = copied ? ' ✅ Скопировано: ' + text + ' — вставь в чат' : ' ✅ Код: ' + j.code;
+  } else document.getElementById('promomsg').textContent = ' ❌ ' + (j.error||'');
+  load();
+}
+async function delPromo(code){
+  if (!confirm('Удалить промокод ' + code + '?')) return;
+  await fetch('/api/admin/delete-promo' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ code: code }) });
+  load();
+}
 async function addSpins(){
   const r = await fetch('/api/admin/add-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ uname: document.getElementById('uname').value, count: parseInt(document.getElementById('cnt').value)||1 }) });
@@ -414,8 +495,36 @@ app.get('/api/admin/data', (req, res) => {
     users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), uname: (u.username || u.name || '').trim(), gameNick: u.gameNick, spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
     wins: winsLog.slice().reverse(),
     pending: pendingDonations.slice(-100),
-    lastDonation
+    lastDonation,
+    promos: promos.slice().reverse()
   })
+})
+
+app.post('/api/admin/gen-promo', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
+  const code = 'SPIN' + crypto.randomBytes(3).toString('hex').toUpperCase()
+  if (supabase) {
+    try {
+      await supabase.from('promo_codes').insert([{ code }])
+    } catch (e) {
+      console.error('Promo create error:', e.message)
+      return res.status(500).json({ ok: false, error: 'db_error' })
+    }
+  }
+  promos.push({ code, used_by: null, used_at: null })
+  res.json({ ok: true, code })
+})
+
+app.post('/api/admin/delete-promo', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
+  const code = String(req.body && req.body.code || '').trim().toUpperCase()
+  if (!code) return res.status(400).json({ ok: false, error: 'bad_params' })
+  if (supabase) {
+    try { await supabase.from('promo_codes').delete().eq('code', code) } catch (e) { }
+  }
+  const idx = promos.findIndex(p => p.code === code)
+  if (idx !== -1) promos.splice(idx, 1)
+  res.json({ ok: true })
 })
 
 app.post('/api/admin/add-spins', async (req, res) => {
