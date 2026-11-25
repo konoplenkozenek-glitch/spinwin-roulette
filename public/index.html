@@ -95,33 +95,31 @@
     filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5));
   }
 
-  /* Контейнер сектора */
-  .wheel-segment {
+  /* Текстовый слой (как луч) */
+  .wheel-text-layer {
     position: absolute;
     width: 50%;
     height: 50%;
     left: 50%;
     top: 0;
-    transform-origin: 0% 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
+    transform-origin: 0% 100%; /* Вращаем вокруг центра колеса */
     pointer-events: none;
-    padding-top: 15px; /* Отступ от края */
   }
 
-  /* Текст внутри сектора */
-  .wheel-segment span {
+  /* Сам текст */
+  .wheel-text-layer span {
+    position: absolute;
+    bottom: 10px; /* Отступ от внешнего края */
+    left: 0;
+    width: 100%;
+    text-align: center;
     font-size: 9px;
     font-weight: 800;
     color: #fff;
     text-shadow: 1px 1px 2px #000, 0 0 4px #000;
-    text-align: center;
-    width: 80px;
     line-height: 1.1;
-    word-break: break-word;
-    /* Текст развернут так, чтобы читаться сверху вниз (от края к центру) */
+    word-wrap: break-word;
+    /* Разворачиваем текст, чтобы он читался от края к центру */
     transform: rotate(180deg); 
   }
 
@@ -439,15 +437,17 @@ function drawWheel() {
     const color = colors[index % colors.length];
     gradientStr.push(`${color} ${startAngle}deg ${endAngle}deg`);
     
-    const segment = document.createElement('div');
-    segment.className = 'wheel-segment';
-    segment.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
+    // Создаем слой для текста
+    const layer = document.createElement('div');
+    layer.className = 'wheel-text-layer';
+    // Поворачиваем слой ровно по центру сектора
+    layer.style.transform = `rotate(${startAngle + (anglePerPrize / 2)}deg)`;
     
     const span = document.createElement('span');
     span.innerText = prize.name;
     
-    segment.appendChild(span);
-    elWheel.appendChild(segment);
+    layer.appendChild(span);
+    elWheel.appendChild(layer);
   });
 
   elWheel.style.background = `conic-gradient(${gradientStr.join(', ')})`;
