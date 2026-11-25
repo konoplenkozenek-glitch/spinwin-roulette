@@ -37,6 +37,7 @@ const pendingDonations = []
 const processedDonations = new Set()
 let daFirstPollDone = false
 let daTokens = { access_token: null, refresh_token: null, expires_at: 0 }
+let lastDonation = null // последний распознанный донат (для админки)
 
 const norm = s => String(s || '').trim().toLowerCase().replace(/^@/, '')
 
@@ -201,6 +202,19 @@ let prizes = [
   { label: 'Venga ll 10k', weight: 1, color: '#FFD700', id: 'venga10k' }
 ]
 
+// === ИВЕНТ: временные шансы призов ===
+// Чтобы запустить ивент, впиши множитель нужному призу, например:
+// const PRIZE_BOOST = { prem30: 10 }  → «Премиум 30 дней» выпадает в 10 раз чаще
+// const PRIZE_BOOST = { bait5: 0.5 }  → «Любая наживка 5 шт» в 2 раза реже
+// Чтобы закончить ивент — верни строку к виду const PRIZE_BOOST = {}
+const PRIZE_BOOST = {}
+if (PRIZE_BOOST && Object.keys(PRIZE_BOOST).length) {
+  prizes.forEach(p => {
+    if (PRIZE_BOOST[p.id]) p.weight = Math.max(1, Math.round(p.weight * PRIZE_BOOST[p.id]))
+  })
+  console.log('🎉 Ивент активен:', JSON.stringify(PRIZE_BOOST))
+}
+
 function pickPrize() {
   const total = prizes.reduce((acc, p) => acc + (p.weight || 1), 0)
   let r = Math.random() * total
@@ -309,12 +323,17 @@ app.get('/admin', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).send('Доступ запрещён. Добавь в адрес ?key=твой_ключ')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Панель рулетки</title>
-<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}</style></head><body>
+<style>body{font-family:sans-serif;background:#111;color:#eee;margin:20px}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #444;padding:6px 10px;font-size:14px}h2{margin-top:30px}input,button{padding:6px;font-size:14px;margin:2px}.danger{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;cursor:pointer}.more{background:#1f3a5f;color:#fff;border:1px solid #3b82f6;padding:8px 14px;border-radius:6px;cursor:pointer}.tops{display:flex;gap:20px;flex-wrap:wrap}.topcard{flex:1;min-width:280px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px}.topcard h3{margin:0 0 8px;font-size:15px;color:#FFD700}.topcard ol{margin:0;padding-left:22px}.topcard li{margin:4px 0}.lastdon{background:#1a2a1a;border:1px solid #3ddc84;border-radius:8px;padding:12px;margin:10px 0;font-size:14px}.reset{background:#7f1d1d;color:#fff;border:1px solid #ef4444;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:12px}</style></head><body>
 <h1>🎰 Панель рулетки</h1>
 <h2>Начислить крутки вручную</h2>
 <input id="uname" placeholder="@username или имя в ТГ"><input id="cnt" type="number" value="1" style="width:60px" placeholder="круток">
 <button onclick="addSpins()">Начислить</button><span id="msg"></span>
+<h2>Последний донат</h2><div class="lastdon" id="lastdon">— пока донатов с последнего рестарта не было —</div>
 <h2>Балансы круток</h2><table id="bal"></table>
+<div class="tops">
+  <div class="topcard"><h3>💸 Топ-5 по донатам</h3><ol id="topDon"></ol></div>
+  <div class="topcard"><h3>🎰 Топ-5 по круткам</h3><ol id="topSpins"></ol></div>
+</div>
 <h2>Журнал выигрышей</h2><table id="log"></table>
 <button class="more" id="moreBtn" style="display:none" onclick="showMore()">Показать ещё 30</button>
 <button class="danger" onclick="clearHistory()">🧹 Очистить журнал выигрышей</button><span id="clrmsg"></span>
@@ -326,10 +345,24 @@ let shownCount = 30;
 async function load(){
   const r = await fetch('/api/admin/data' + KEY); const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка доступа'; return; }
-  document.getElementById('bal').innerHTML = '<tr><th>Игрок (ТГ)</th><th>Игровой ник</th><th>Круток</th><th>Задонатил, ₽</th></tr>' +
-    j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
+  // Последний донат
+  const ld = document.getElementById('lastdon');
+  ld.innerHTML = j.lastDonation
+    ? '💰 <b>'+j.lastDonation.amount+' ₽</b> от «'+j.lastDonation.nick+'» → <b>'+j.lastDonation.user+'</b> · +'+j.lastDonation.spins+' круток · '+new Date(j.lastDonation.at).toLocaleTimeString()
+    : '— пока донатов с последнего рестарта не было —';
+  // Балансы
+  document.getElementById('bal').innerHTML = '<tr><th>Игрок (ТГ)</th><th>Игровой ник</th><th>Круток</th><th>Задонатил, ₽</th><th></th></tr>' +
+    j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td><td>'+(u.uname ? '<button class="reset" onclick="resetSpins(\\''+u.uname+'\\')">Сбросить</button>' : '')+'</td></tr>').join('');
+  // Топы
+  const fmt = n => Math.round(n*100)/100;
+  const topD = j.users.slice().sort((a,b)=>b.donated-a.donated).filter(u=>u.donated>0).slice(0,5);
+  const topS = j.users.slice().sort((a,b)=>b.spins-a.spins).filter(u=>u.spins>0).slice(0,5);
+  document.getElementById('topDon').innerHTML = topD.length ? topD.map(u=>'<li>'+u.name+' — <b>'+fmt(u.donated)+' ₽</b></li>').join('') : '<li>пока пусто</li>';
+  document.getElementById('topSpins').innerHTML = topS.length ? topS.map(u=>'<li>'+u.name+' — <b>'+u.spins+'</b></li>').join('') : '<li>пока пусто</li>';
+  // Журнал
   allWins = j.wins;
   renderLog();
+  // Нераспознанные
   document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th></th></tr>' +
     (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td><button onclick="assign('+p.id+')">Начислить</button></td></tr>').join('') : '<tr><td colspan="4">пусто</td></tr>');
 }
@@ -345,6 +378,13 @@ async function addSpins(){
   const r = await fetch('/api/admin/add-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ uname: document.getElementById('uname').value, count: parseInt(document.getElementById('cnt').value)||1 }) });
   const j = await r.json(); document.getElementById('msg').textContent = j.ok ? ' ✅' : ' ❌ ' + (j.error||'');
+  load();
+}
+async function resetSpins(uname){
+  if (!confirm('Обнулить крутки у ' + uname + '?')) return;
+  const r = await fetch('/api/admin/reset-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uname: uname }) });
+  const j = await r.json(); if (!j.ok) alert('Ошибка: ' + (j.error || 'не найдено'));
   load();
 }
 async function clearHistory(){
@@ -371,9 +411,10 @@ app.get('/api/admin/data', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
   res.json({
     ok: true,
-    users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), gameNick: u.gameNick, spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
+    users: Object.entries(users).map(([id, u]) => ({ name: '@' + (u.username || u.name || id), uname: (u.username || u.name || '').trim(), gameNick: u.gameNick, spins: u.spins, donated: u.donated })).sort((a, b) => b.spins - a.spins),
     wins: winsLog.slice().reverse(),
-    pending: pendingDonations.slice(-100)
+    pending: pendingDonations.slice(-100),
+    lastDonation
   })
 })
 
@@ -390,6 +431,20 @@ app.post('/api/admin/add-spins', async (req, res) => {
   await syncUserToDB(entryKey, users[entryKey])
 
   res.json({ ok: true, spins: users[entryKey].spins })
+})
+
+app.post('/api/admin/reset-spins', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
+  const uname = norm(req.body && req.body.uname)
+  if (!uname) return res.status(400).json({ ok: false, error: 'bad_params' })
+
+  const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
+  if (!entryKey) return res.status(404).json({ ok: false, error: 'not_found', message: 'Игрок не найден' })
+
+  users[entryKey].spins = 0
+  await syncUserToDB(entryKey, users[entryKey])
+
+  res.json({ ok: true, spins: 0 })
 })
 
 app.post('/api/admin/assign-pending', async (req, res) => {
@@ -494,6 +549,14 @@ async function pollDonations() {
 
           const userKey = Object.keys(users).find(k => users[k] === user)
           if(userKey) await syncUserToDB(userKey, user)
+
+          lastDonation = {
+            nick: nick || '(без имени)',
+            user: '@' + (user.username || user.name),
+            amount,
+            spins,
+            at: Date.now()
+          }
 
           notifyOwner(`💰 Донат ${amount} ₽ от «${nick}» → @${user.username || user.name}: +${spins} круток`)
         } else {
