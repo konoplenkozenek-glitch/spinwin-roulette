@@ -18,8 +18,10 @@ const BOT_TOKEN = process.env.BOT_TOKEN || ''
 const ALLOW_DEV = (process.env.ALLOW_DEV || 'true').toLowerCase() === 'true'
 const ADMIN_KEY = process.env.ADMIN_KEY || 'change-me'
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || ''
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || ''
 const RUB_PER_SPIN = parseFloat(process.env.RUB_PER_SPIN || '100')
 const PROMO_SPINS = parseInt(process.env.PROMO_SPINS || '1', 10)
+const DAILY_PROMO = (process.env.DAILY_PROMO || 'true').toLowerCase() === 'true'
 const DA_CLIENT_ID = process.env.DA_CLIENT_ID || ''
 const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
@@ -165,6 +167,32 @@ loadDataFromDB()
 loadDaTokens()
 loadPromos()
 
+// === Ежедневный промокод ===
+async function maybeGenerateDailyPromo() {
+  if (!DAILY_PROMO || !supabase) return
+  try {
+    const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10) // дата по МСК
+    const { data: meta } = await supabase.from('app_meta').select('*').eq('key', 'last_daily_promo').maybeSingle()
+    if (meta && meta.value === today) return
+
+    const code = 'SPIN' + crypto.randomBytes(3).toString('hex').toUpperCase()
+    const { error: insErr } = await supabase.from('promo_codes').insert([{ code }])
+    if (insErr) throw insErr
+    promos.push({ code, used_by: null, used_at: null })
+
+    if (meta) {
+      await supabase.from('app_meta').update({ value: today }).eq('key', 'last_daily_promo')
+    } else {
+      await supabase.from('app_meta').insert([{ key: 'last_daily_promo', value: today }])
+    }
+
+    notifyOwner(`🎟 Дневной промокод создан: ${code}`)
+    sendToGroup(`🎰 Дневной промокод! 🎟\n\nКод: ${code}\n\nКто первый введёт его в рулетке — получит ${PROMO_SPINS} крутку! Код одноразовый, успей первым! 🏁`)
+    console.log(`🎟 Дневной промокод создан: ${code}`)
+  } catch (e) { console.error('Daily promo error:', e.message) }
+}
+setInterval(maybeGenerateDailyPromo, 10 * 60 * 1000)
+
 function getUser(tgId, initDataUser) {
   if (!users[tgId]) {
     users[tgId] = {
@@ -248,6 +276,17 @@ async function notifyOwner(text) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text })
+    })
+  } catch (e) { }
+}
+
+async function sendToGroup(text) {
+  if (!BOT_TOKEN || !GROUP_CHAT_ID) return
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: GROUP_CHAT_ID, text })
     })
   } catch (e) { }
 }
@@ -743,6 +782,7 @@ async function pollDonations() {
 }
 setInterval(pollDonations, 20000)
 setTimeout(pollDonations, 5000)
+setTimeout(maybeGenerateDailyPromo, 20000)
 
 app.use('/', express.static(path.join(__dirname, 'public')))
 
