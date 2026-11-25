@@ -4,6 +4,7 @@ import cors from 'cors'
 import crypto from 'crypto'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { createClient } from '@supabase/supabase-js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -23,7 +24,13 @@ const DA_CLIENT_SECRET = process.env.DA_CLIENT_SECRET || ''
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'http://localhost:8080').replace(/\/$/, '')
 const DA_REDIRECT_URI = process.env.DA_REDIRECT_URI || `${PUBLIC_URL}/da/callback`
 
-// === Storage (в памяти, сбрасывается при перезапуске) ===
+// === Supabase ===
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SECRET_KEY
+)
+
+// === Storage ===
 const users = Object.create(null)
 const winsLog = []
 const pendingDonations = []
@@ -32,6 +39,48 @@ let daFirstPollDone = false
 let daTokens = { access_token: null, refresh_token: null, expires_at: 0 }
 
 const norm = s => String(s || '').trim().toLowerCase().replace(/^@/, '')
+
+async function syncUserToDB(tgId, user) {
+  if (!supabase) return
+  try {
+    await supabase.from('roulette_users').upsert({
+      tg_id: tgId,
+      name: user.name,
+      username: user.username,
+      game_nick: user.gameNick,
+      spins: user.spins,
+      donated: user.donated
+    })
+  } catch (e) { console.error('Sync error:', e.message) }
+}
+
+async function syncWinToDB(tgId, tgName, gameNick, prize) {
+  if (!supabase) return
+  try {
+    await supabase.from('roulette_history').insert([{
+      user_id: tgId,
+      username: tgName,
+      prize: prize
+    }])
+  } catch (e) { console.error('Win log error:', e.message) }
+}
+
+async function loadDataFromDB() {
+  if (!supabase) return
+  try {
+    const { data: dbUsers } = await supabase.from('roulette_users').select('*')
+    if (dbUsers) {
+      dbUsers.forEach(u => {
+        users[u.tg_id] = {
+          name: u.name, username: u.username, gameNick: u.game_nick,
+          spins: u.spins, donated: u.donated
+        }
+      })
+    }
+    console.log('✅ Данные загружены из Supabase')
+  } catch (e) { console.error('Ошибка загрузки:', e.message) }
+}
+loadDataFromDB()
 
 function getUser(tgId, initDataUser) {
   if (!users[tgId]) {
@@ -46,7 +95,7 @@ function getUser(tgId, initDataUser) {
   return users[tgId]
 }
 
-// === Telegram initData verification (актуальный алгоритм) ===
+// === Telegram verify ===
 function verifyInitData(initData) {
   try {
     if (!initData || typeof initData !== 'string') return null
@@ -63,9 +112,7 @@ function verifyInitData(initData) {
     const userStr = urlParams.get('user')
     if (!userStr) return null
     return JSON.parse(userStr)
-  } catch (e) {
-    return null
-  }
+  } catch (e) { return null }
 }
 
 // === Prizes ===
@@ -100,7 +147,6 @@ function pickPrize() {
   return { index: prizes.length - 1, prize: prizes[prizes.length - 1] }
 }
 
-// === Уведомление владельцу в Telegram ===
 async function notifyOwner(text) {
   if (!BOT_TOKEN || !ADMIN_CHAT_ID) return
   try {
@@ -109,25 +155,19 @@ async function notifyOwner(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text })
     })
-  } catch (e) {
-    console.log('[notify] ошибка:', e.message)
-  }
+  } catch (e) { }
 }
 
-// === Поиск игрока по донату ===
 function findUserByDonation(nick, message) {
   let entry = Object.values(users).find(u => norm(u.username) === nick || norm(u.name) === nick)
   if (entry) return entry
-
   const text = `${nick} ${message || ''}`.toLowerCase()
-
   const m = text.match(/@?([a-z0-9_]{4,32})/)
   if (m) {
     const cand = m[1]
     entry = Object.values(users).find(u => norm(u.username) === cand || norm(u.name) === cand)
     if (entry) return entry
   }
-
   for (const u of Object.values(users)) {
     const un = norm(u.username)
     if (un && un.length >= 4 && text.includes(un)) return u
@@ -141,47 +181,37 @@ function findUserByDonation(nick, message) {
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 app.get('/api/prizes', (req, res) => res.json({ ok: true, prizes }))
 
-// Баланс игрока + сохранение игрового ника
-app.post('/api/me', (req, res) => {
+app.post('/api/me', async (req, res) => {
   let tgUser = null
-  if (BOT_TOKEN) {
-    tgUser = verifyInitData(req.body && req.body.initData)
-  }
-  if (!tgUser && ALLOW_DEV) {
-    tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
-  }
+  if (BOT_TOKEN) tgUser = verifyInitData(req.body && req.body.initData)
+  if (!tgUser && ALLOW_DEV) tgUser = { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
   if (!tgUser) return res.status(403).json({ ok: false, error: 'auth_failed' })
 
-  const user = getUser(String(tgUser.id), tgUser)
-
+  const tgId = String(tgUser.id)
+  const user = getUser(tgId, tgUser)
+  
   const gameNick = String((req.body && req.body.gameNick) || '').trim()
-  if (gameNick && !user.gameNick) user.gameNick = gameNick.slice(0, 40)
+  if (gameNick && !user.gameNick) {
+    user.gameNick = gameNick.slice(0, 40)
+    await syncUserToDB(tgId, user)
+  }
 
   res.json({
-    ok: true,
-    spins: user.spins,
-    donated: user.donated,
-    name: '@' + (user.username || user.name || tgUser.id),
+    ok: true, spins: user.spins, donated: user.donated,
+    name: '@' + (user.username || user.name || tgId),
     gameNick: user.gameNick || ''
   })
 })
 
-app.post('/api/spin', (req, res) => {
-  console.log('[spin] initData получен:', !!(req.body && req.body.initData))
-
-  if (!BOT_TOKEN && !ALLOW_DEV) {
-    return res.status(400).json({ ok: false, error: 'Server not configured: BOT_TOKEN is required' })
-  }
-
+app.post('/api/spin', async (req, res) => {
+  if (!BOT_TOKEN && !ALLOW_DEV) return res.status(400).json({ ok: false, error: 'Server not configured' })
   let tgUser = null
-
   if (BOT_TOKEN && !ALLOW_DEV) {
     const ver = verifyInitData(req.body && req.body.initData)
     if (!ver) return res.status(403).json({ ok: false, error: 'initData verification failed' })
     tgUser = ver
   } else if (BOT_TOKEN && ALLOW_DEV) {
-    const ver = verifyInitData(req.body && req.body.initData)
-    tgUser = ver || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
+    tgUser = verifyInitData(req.body && req.body.initData) || { id: 'dev-user-42', first_name: 'Dev', username: 'dev_user' }
   } else if (!ALLOW_DEV) {
     return res.status(403).json({ ok: false, error: 'Not allowed in dev mode' })
   } else {
@@ -191,23 +221,26 @@ app.post('/api/spin', (req, res) => {
   const tgId = String(tgUser.id)
   const user = getUser(tgId, tgUser)
   if (user.spins <= 0) {
-    return res.status(400).json({ ok: false, error: 'no_spins', message: 'Нет круток. Задонать можно на DonationAlerts — 100 ₽ = 1 крутка!' })
+    return res.status(400).json({ ok: false, error: 'no_spins', message: 'Нет круток. Задонать на DonationAlerts — 100 ₽ = 1 крутка!' })
   }
 
   user.spins -= 1
   const { index, prize } = pickPrize()
-  winsLog.push({ tgId, tgName: '@' + (user.username || user.name), gameNick: user.gameNick || '', prize: prize.label, at: Date.now() })
+  
+  const tgName = '@' + (user.username || user.name)
+  winsLog.push({ tgId, tgName, gameNick: user.gameNick || '', prize: prize.label, at: Date.now() })
   if (winsLog.length > 500) winsLog.shift()
 
-  const msg = `🎰 ${'@' + (user.username || user.name || tgId)}` +
-    (user.gameNick ? ` (игровой ник: ${user.gameNick})` : '') +
-    `\nВыпало: «${prize.label}»\nКруток осталось: ${user.spins}`
+  await syncUserToDB(tgId, user)
+  await syncWinToDB(tgId, tgName, user.gameNick, prize.label)
+
+  const msg = `🎰 ${tgName}` + (user.gameNick ? ` (игровой ник: ${user.gameNick})` : '') + `\nВыпало: «${prize.label}»\nКруток осталось: ${user.spins}`
   notifyOwner(msg)
 
   res.json({ ok: true, index, prize, spinsLeft: user.spins })
 })
 
-// === Админ-панель: /admin?key=ТВОЙ_КЛЮЧ ===
+// === Админка ===
 app.get('/admin', (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).send('Доступ запрещён. Добавь в адрес ?key=твой_ключ')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -219,7 +252,7 @@ app.get('/admin', (req, res) => {
 <button onclick="addSpins()">Начислить</button><span id="msg"></span>
 <h2>Балансы круток</h2><table id="bal"></table>
 <h2>Журнал выигрышей</h2><table id="log"></table>
-<h2>Нераспознанные донаты — нажми «Начислить игроку» и введи ник</h2><table id="pend"></table>
+<h2>Нераспознанные донаты</h2><table id="pend"></table>
 <script>
 const KEY = location.search;
 async function load(){
@@ -229,8 +262,8 @@ async function load(){
     j.users.map(u => '<tr><td>'+u.name+'</td><td>'+(u.gameNick||'—')+'</td><td>'+u.spins+'</td><td>'+u.donated+'</td></tr>').join('');
   document.getElementById('log').innerHTML = '<tr><th>Время</th><th>Игрок</th><th>Игровой ник</th><th>Приз</th></tr>' +
     j.wins.map(w => '<tr><td>'+new Date(w.at).toLocaleTimeString()+'</td><td>'+w.tgName+'</td><td>'+(w.gameNick||'—')+'</td><td>'+w.prize+'</td></tr>').join('');
-  document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th>Время</th><th></th></tr>' +
-    (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td>'+new Date(p.at).toLocaleTimeString()+'</td><td><button onclick="assign('+p.id+')">Начислить игроку</button></td></tr>').join('') : '<tr><td colspan="5">пусто</td></tr>');
+  document.getElementById('pend').innerHTML = '<tr><th>Ник из доната</th><th>Сообщение</th><th>Сумма</th><th></th></tr>' +
+    (j.pending.length ? j.pending.map(p => '<tr><td>'+p.nick+'</td><td>'+(p.message||'—')+'</td><td>'+p.amount+' ₽</td><td><button onclick="assign('+p.id+')">Начислить</button></td></tr>').join('') : '<tr><td colspan="4">пусто</td></tr>');
 }
 async function addSpins(){
   const r = await fetch('/api/admin/add-spins' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
@@ -243,8 +276,7 @@ async function assign(id){
   if (!uname) return;
   const r = await fetch('/api/admin/assign-pending' + KEY, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ id: id, uname: uname }) });
-  const j = await r.json();
-  if (!j.ok) alert('Ошибка: ' + (j.error || 'не найдено'));
+  const j = await r.json(); if (!j.ok) alert('Ошибка: ' + (j.error || 'не найдено'));
   load();
 }
 load(); setInterval(load, 15000);
@@ -261,35 +293,44 @@ app.get('/api/admin/data', (req, res) => {
   })
 })
 
-app.post('/api/admin/add-spins', (req, res) => {
+app.post('/api/admin/add-spins', async (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
   const uname = norm(req.body && req.body.uname)
   const count = parseInt(req.body && req.body.count, 10)
   if (!uname || !(count > 0)) return res.status(400).json({ ok: false, error: 'bad_params' })
-  const entry = Object.values(users).find(u => norm(u.username) === uname || norm(u.name) === uname)
-  if (!entry) return res.status(404).json({ ok: false, error: 'not_found', message: 'Игрок с таким именем не открывал рулетку' })
-  entry.spins += count
-  res.json({ ok: true, spins: entry.spins })
+  
+  const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
+  if (!entryKey) return res.status(404).json({ ok: false, error: 'not_found', message: 'Игрок не найден' })
+  
+  users[entryKey].spins += count
+  await syncUserToDB(entryKey, users[entryKey])
+  
+  res.json({ ok: true, spins: users[entryKey].spins })
 })
 
-app.post('/api/admin/assign-pending', (req, res) => {
+app.post('/api/admin/assign-pending', async (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(403).json({ ok: false, error: 'bad_key' })
   const id = parseInt(req.body && req.body.id, 10)
   const uname = norm(req.body && req.body.uname)
   const entry = pendingDonations.find(p => p.id === id)
   if (!entry) return res.status(404).json({ ok: false, error: 'donation_not_found' })
-  const user = Object.values(users).find(u => norm(u.username) === uname || norm(u.name) === uname)
-  if (!user) return res.status(404).json({ ok: false, error: 'user_not_found', message: 'Игрок с таким ником не открывал рулетку' })
+  
+  const entryKey = Object.keys(users).find(k => norm(users[k].username) === uname || norm(users[k].name) === uname)
+  if (!entryKey) return res.status(404).json({ ok: false, error: 'user_not_found', message: 'Игрок не найден' })
+
   const spins = Math.floor(entry.amount / RUB_PER_SPIN)
-  user.spins += spins
-  user.donated += entry.amount
+  users[entryKey].spins += spins
+  users[entryKey].donated += entry.amount
   pendingDonations.splice(pendingDonations.indexOf(entry), 1)
-  res.json({ ok: true, spins: user.spins, credited: spins })
+  
+  await syncUserToDB(entryKey, users[entryKey])
+  
+  res.json({ ok: true, spins: users[entryKey].spins, credited: spins })
 })
 
-// === DonationAlerts: подключение и приём донатов ===
+// === DonationAlerts ===
 app.get('/da/auth', (req, res) => {
-  if (!DA_CLIENT_ID) return res.send('Сначала задай DA_CLIENT_ID и DA_CLIENT_SECRET в переменных окружения Render')
+  if (!DA_CLIENT_ID) return res.send('Задай DA_CLIENT_ID и DA_CLIENT_SECRET')
   res.redirect(`https://www.donationalerts.com/oauth/authorize?client_id=${DA_CLIENT_ID}&redirect_uri=${encodeURIComponent(DA_REDIRECT_URI)}&response_type=code&scope=oauth-donation-index`)
 })
 
@@ -297,25 +338,13 @@ app.get('/da/callback', async (req, res) => {
   try {
     const code = req.query.code
     if (!code) return res.send('Не пришёл код авторизации')
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: DA_CLIENT_ID,
-      client_secret: DA_CLIENT_SECRET,
-      redirect_uri: DA_REDIRECT_URI,
-      code
-    })
-    const r = await fetch('https://www.donationalerts.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
-    })
+    const body = new URLSearchParams({ grant_type: 'authorization_code', client_id: DA_CLIENT_ID, client_secret: DA_CLIENT_SECRET, redirect_uri: DA_REDIRECT_URI, code })
+    const r = await fetch('https://www.donationalerts.com/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
     const j = await r.json()
     if (!j.access_token) return res.send('Ошибка обмена кода: ' + JSON.stringify(j))
     daTokens = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 }
-    res.send('✅ DonationAlerts подключен! Можешь закрыть эту страницу.')
-  } catch (e) {
-    res.send('Ошибка: ' + e.message)
-  }
+    res.send('✅ DonationAlerts подключен!')
+  } catch (e) { res.send('Ошибка: ' + e.message) }
 })
 
 async function getAccessToken() {
@@ -323,45 +352,28 @@ async function getAccessToken() {
   if (Date.now() < daTokens.expires_at - 60000) return daTokens.access_token
   if (!daTokens.refresh_token) return null
   try {
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: DA_CLIENT_ID,
-      client_secret: DA_CLIENT_SECRET,
-      refresh_token: daTokens.refresh_token
-    })
-    const r = await fetch('https://www.donationalerts.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
-    })
+    const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: DA_CLIENT_ID, client_secret: DA_CLIENT_SECRET, refresh_token: daTokens.refresh_token })
+    const r = await fetch('https://www.donationalerts.com/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
     const j = await r.json()
     if (!j.access_token) return null
     daTokens = { access_token: j.access_token, refresh_token: j.refresh_token || daTokens.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 }
     return daTokens.access_token
-  } catch (e) {
-    return null
-  }
+  } catch (e) { return null }
 }
 
 async function pollDonations() {
   try {
     const token = await getAccessToken()
     if (!token) return
-    const r = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=1', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    if (!r.ok) { console.log('[DA] ошибка опроса:', r.status); return }
+    const r = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=1', { headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok) return
     const j = await r.json()
     const list = j.data || []
     const cutoff = Date.now() - 10 * 60 * 1000
 
     if (!daFirstPollDone) {
-      for (const d of list) {
-        const t = new Date(d.created_at).getTime() || 0
-        if (t < cutoff) processedDonations.add(String(d.id))
-      }
+      for (const d of list) { if ((new Date(d.created_at).getTime() || 0) < cutoff) processedDonations.add(String(d.id)) }
       daFirstPollDone = true
-      console.log('[DA] подключен: донаты старше 10 минут пропущены, свежие обработаем')
     }
 
     for (const d of list) {
@@ -379,20 +391,20 @@ async function pollDonations() {
         if (spins > 0) {
           user.spins += spins
           user.donated += amount
-          console.log(`[DA] @${user.username || user.name}: +${spins} круток (донат ${amount} ₽, имя доната: "${nick}", сообщение: "${message}")`)
-          notifyOwner(`💰 Донат ${amount} ₽ от «${nick}»${message ? ` («${message}»)` : ''} → игрок @${user.username || user.name}: +${spins} круток`)
+          
+          const userKey = Object.keys(users).find(k => users[k] === user)
+          if(userKey) await syncUserToDB(userKey, user)
+          
+          notifyOwner(`💰 Донат ${amount} ₽ от «${nick}» → @${user.username || user.name}: +${spins} круток`)
         } else {
           pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
         }
       } else {
         pendingDonations.push({ id: Date.now() + Math.floor(Math.random() * 1000), nick: nick || '(без имени)', message, amount, at: Date.now() })
-        console.log(`[DA] донат без совпадения: ${nick || '(без имени)'} — ${amount} ₽ (назначь вручную в /admin)`)
-        notifyOwner(`⚠️ Донат ${amount} ₽ от «${nick || 'без имени'}»${message ? ` («${message}»)` : ''} не распознан — назначь крутки в /admin`)
+        notifyOwner(`⚠️ Донат ${amount} ₽ от «${nick || 'без имени'}» не распознан.`)
       }
     }
-  } catch (e) {
-    console.log('[DA] исключение:', e.message)
-  }
+  } catch (e) { }
 }
 setInterval(pollDonations, 20000)
 setTimeout(pollDonations, 5000)
