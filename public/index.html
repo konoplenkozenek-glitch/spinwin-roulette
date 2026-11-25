@@ -62,7 +62,6 @@
     margin-bottom: 15px;
   }
 
-  /* КОЛЕСО */
   .wheel-container {
     position: relative;
     width: 340px;
@@ -95,7 +94,6 @@
     filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5));
   }
 
-  /* Кнопки */
   .btn {
     display: block; width: 100%; max-width: 320px;
     margin: 10px auto;
@@ -169,7 +167,6 @@
 
   .prizes-list li { color: #ffe9a8; margin-bottom: 4px; font-size: 13px; }
 
-  /* МОДАЛЬНОЕ ОКНО ВЫИГРЫША */
   .modal {
     display: none;
     position: fixed;
@@ -213,7 +210,6 @@
   .modal-content h2 { color: var(--fire); margin-bottom: 10px; font-size: 24px; text-shadow: 0 0 10px rgba(255,69,0,0.5); position: relative; z-index: 1; }
   .prize-name { font-size: 22px; margin-bottom: 20px; color: #fff; font-weight: 800; text-shadow: 0 0 10px #fff; position: relative; z-index: 1; }
   
-  /* ОГНЕННАЯ ПЕНТАГРАММА */
   .pentagram-container {
     width: 150px;
     height: 150px;
@@ -374,7 +370,6 @@ const winTitle = document.getElementById('winTitle');
 const closeModalBtn = document.getElementById('closeModalBtn');
 
 let currentRotation = 0;
-
 document.getElementById('donateBtn').href = DONATE_URL;
 
 function createParticles() {
@@ -409,20 +404,20 @@ function drawWheel() {
     grads.push(`${colors[i % colors.length]} ${start}deg ${end}deg`);
 
     const centerAngle = start + anglePer / 2;
-    const R = 110; // радиус, откуда начинается надпись (от центра колеса)
+    const R = 125; // радиус, где стоит текст (ближе к краю)
 
     const layer = document.createElement('div');
     layer.style.position = 'absolute';
     layer.style.left = '50%';
     layer.style.top = '50%';
     layer.style.transformOrigin = 'center';
-    // 1) повернуть на центр сектора, 2) уйти на радиус R, 3) повернуть текст на 90° (вдоль луча, от края к центру)
-    layer.style.transform = `rotate(${centerAngle}deg) translate(${R}px) rotate(90deg)`;
+    // поворот на центр сектора → сдвиг наружу → текст становится вертикальным (вдоль «спицы»)
+    layer.style.transform = `rotate(${centerAngle}deg) translate(${R}px) rotate(-90deg)`;
     layer.style.pointerEvents = 'none';
 
     const span = document.createElement('span');
     span.innerText = p.name;
-    span.style.fontSize = '7px';
+    span.style.fontSize = '6px';
     span.style.fontFamily = "'Unbounded', sans-serif";
     span.style.fontWeight = '800';
     span.style.color = '#fff';
