@@ -13,7 +13,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
 
-// ====== НАСТРОЙКИ ПАКЕТОВ, ПРИЗОВ И ЦЕЛИ ======
+// ====== НАСТРОЙКИ ПАКЕТОВ И ЦЕЛИ ======
 const PROGRESS_GOAL = 10000;   // цель прогресс-бара, ₽
 const GOAL_BONUS_SPINS = 5;    // сколько взрывов за достижение цели
 
@@ -22,17 +22,7 @@ const PACKAGES = [
   { amount: 300,  spins: 4 },
   { amount: 1000, spins: 13 }
 ];
-
-// NB: названия призов поправь под свои реальные награды
-const PRIZES = [
-  { label: 'Пусто 💨',     color: '#888888', weight: 30 },
-  { label: '+1 взрыв 💣',  color: '#3ddc84', weight: 20, bonusSpins: 1 },
-  { label: '+2 взрыва 💣💣', color: '#3ddc84', weight: 10, bonusSpins: 2 },
-  { label: 'Снасть 🔧',    color: '#4fc3f7', weight: 12 },
-  { label: 'Наживка x5 🦗', color: '#4fc3f7', weight: 8 },
-  { label: 'Супер-приз 🏆', color: '#FFD700', weight: 5 }
-];
-// ==============================================
+// ======================================
 
 // ====== БАЗА ======
 const db = new Database('roulette.db');
@@ -65,12 +55,6 @@ CREATE TABLE IF NOT EXISTS promos (
   spins INTEGER DEFAULT 1,
   used_by TEXT,
   used_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS wins (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  telegram_id TEXT,
-  prize TEXT,
-  ts INTEGER
 );
 `);
 
@@ -147,17 +131,6 @@ function grantGoalBonus(u) {
   return false;
 }
 
-function pickPrize() {
-  const totalWeight = PRIZES.reduce((s, p) => s + p.weight, 0);
-  let r = Math.random() * totalWeight;
-  let index = 0;
-  for (let i = 0; i < PRIZES.length; i++) {
-    r -= PRIZES[i].weight;
-    if (r <= 0) { index = i; break; }
-  }
-  return index;
-}
-
 async function sendTelegramMessage(chatId, text) {
   if (!BOT_TOKEN || !chatId) return;
   try {
@@ -170,10 +143,6 @@ async function sendTelegramMessage(chatId, text) {
 }
 
 // ====== API МИНИ-АППА ======
-app.get('/api/prizes', (req, res) => {
-  res.json({ ok: true, prizes: PRIZES.map(p => ({ label: p.label, color: p.color })) });
-});
-
 app.post('/api/me', async (req, res) => {
   const tgUser = verifyInitData(req.body.initData);
   if (!tgUser) return res.json({ ok: false, error: 'auth' });
@@ -209,15 +178,9 @@ app.post('/api/spin', (req, res) => {
   }
 
   u.spins -= 1;
-  const index = pickPrize();
-  const prize = PRIZES[index];
-  if (prize.bonusSpins) u.spins += prize.bonusSpins;
   syncUserToDB(u);
 
-  db.prepare('INSERT INTO wins (telegram_id, prize, ts) VALUES (?, ?, ?)')
-    .run(String(u.telegram_id), prize.label, Date.now());
-
-  res.json({ ok: true, index, prize: { label: prize.label, color: prize.color }, spinsLeft: u.spins });
+  res.json({ ok: true, spinsLeft: u.spins });
 });
 
 app.post('/api/redeem-promo', (req, res) => {
