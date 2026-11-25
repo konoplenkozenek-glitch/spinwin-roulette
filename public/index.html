@@ -3,11 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>🎰 Золотая Удача</title>
+<title>Золотая Удача</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<!-- Библиотека для конфетти -->
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-<!-- Премиальный шрифт -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&display=swap" rel="stylesheet">
@@ -34,7 +32,6 @@
     position: relative;
   }
 
-  /* Живой фон */
   #bg-particles {
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;
@@ -42,87 +39,65 @@
     background: radial-gradient(circle at top, #2a1a08 0%, #120c04 60%, #0a0703 100%);
   }
 
-  /* Заголовок */
-  h1 { 
-    color: #FFD700; 
-    font-size: 24px; 
-    text-shadow: 0 0 20px rgba(255,215,0,.6); 
+  h1 {
+    color: #FFD700;
+    font-size: 24px;
+    text-shadow: 0 0 20px rgba(255,215,0,.6);
     margin-bottom: 10px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
   }
 
-  .star {
-    font-size: 24px;
-    filter: drop-shadow(0 0 8px #FFD700);
-  }
-  .star.left { animation: spin 3s linear infinite; }
-  .star.right { animation: spin 3s linear infinite reverse; }
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-
-  /* Стеклянные карточки */
-  .glass {
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
-    padding: 15px;
-    margin: 0 auto 15px;
-    max-width: 400px;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-  }
-
-  .balance { 
-    font-size: 14px; 
-    color: #ffe9a8; 
-    min-height: 20px; 
-    margin-bottom: 15px;
-  }
-
-  /* Колесо */
+  /* ===== КОЛЕСО ===== */
   .wheel-container {
     position: relative;
-    width: 140px;
-    height: 140px;
-    margin: 0 auto 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    width: 290px;
+    height: 290px;
+    margin: 14px auto 20px;
   }
-  .wheel-bg {
+
+  /* свечение-пьедестал под колесом */
+  .wheel-container::after {
+    content: '';
     position: absolute;
-    width: 100%; height: 100%;
+    bottom: -16px; left: 50%;
+    transform: translateX(-50%);
+    width: 72%; height: 22px;
     border-radius: 50%;
-    background: conic-gradient(
-      var(--gold) 0deg 45deg, 
-      transparent 45deg 90deg, 
-      var(--gold) 90deg 135deg, 
-      transparent 135deg 180deg, 
-      var(--gold) 180deg 225deg, 
-      transparent 225deg 270deg, 
-      var(--gold) 270deg 315deg, 
-      transparent 315deg 360deg
-    );
-    animation: spinWheel 10s linear infinite;
-    opacity: 0.2;
+    background: radial-gradient(ellipse, rgba(255,215,0,.28), transparent 70%);
+    filter: blur(7px);
   }
-  @keyframes spinWheel { 100% { transform: rotate(360deg); } }
-  
-  .wheel-icon {
-    font-size: 60px;
-    z-index: 1;
-    filter: drop-shadow(0 0 15px rgba(255,215,0,0.8));
-    animation: float 2s ease-in-out infinite;
+
+  /* стрелка-указатель (CSS-треугольник, без эмодзи) */
+  .wheel-pointer {
+    position: absolute;
+    top: -6px; left: 50%;
+    transform: translateX(-50%);
+    width: 26px; height: 32px;
+    background: linear-gradient(180deg, #fff3b0 0%, #FFD700 45%, #a67c00 100%);
+    clip-path: polygon(50% 100%, 8% 0, 92% 0);
+    border-radius: 5px;
+    filter: drop-shadow(0 0 8px rgba(255,215,0,.9));
+    z-index: 5;
+    animation: pointerPulse 1.6s ease-in-out infinite;
   }
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+  @keyframes pointerPulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.12); }
   }
+
+  #wheelCanvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: block;
+    transition: transform 4.5s cubic-bezier(.15, .8, .15, 1);
+    will-change: transform;
+  }
+
+  /* медленное фоновое вращение до первого спина */
+  #wheelCanvas.idle { animation: idleSpin 16s linear infinite; }
+  @keyframes idleSpin { 100% { transform: rotate(360deg); } }
 
   /* Кнопки */
   .btn {
@@ -138,16 +113,15 @@
     position: relative;
     overflow: hidden;
   }
-  
+
   .btn-spin {
     background: linear-gradient(135deg, #FFD700 0%, #FF8C00 100%);
     color: #000;
     box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
   }
   .btn-spin:active { transform: scale(0.96); }
-  .btn-spin:disabled { filter: grayscale(1); opacity: 0.7; }
-  
-  /* Блик на кнопке */
+  .btn-spin:disabled { filter: grayscale(1); opacity: 0.7; cursor: wait; }
+
   .btn-spin::before {
     content: '';
     position: absolute; top: 0; left: -100%;
@@ -182,9 +156,40 @@
     animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
   @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-  
+
   .result.win { display: block; background: rgba(18, 51, 28, 0.8); border: 1px solid #3ddc84; color: #c8f7d8; backdrop-filter: blur(10px); }
   .result.fail { display: block; background: rgba(58, 20, 20, 0.8); border: 1px solid #ef4444; color: #f7d1d1; backdrop-filter: blur(10px); }
+
+  /* Модалка победы */
+  .win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .win-overlay.show { display: flex; animation: fadeIn .3s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .win-card {
+    background: linear-gradient(160deg, #1d1204, #0d0904);
+    border: 2px solid var(--gold);
+    border-radius: 24px;
+    padding: 30px 24px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(255,215,0,.4);
+    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .win-card h2 { color: var(--gold); font-size: 20px; margin-bottom: 12px; text-shadow: 0 0 15px rgba(255,215,0,.6); text-transform: uppercase; }
+  .win-card p { font-size: 14px; line-height: 1.5; color: #ffe9a8; margin-bottom: 8px; }
+  .win-card .prize-name { font-size: 20px; font-weight: 800; color: #fff; text-shadow: 0 0 10px rgba(255,215,0,.8); margin-bottom: 14px; }
+  .win-card .btn { max-width: none; margin-top: 10px; }
 
   /* Текстовые блоки */
   .text-block { text-align: left; font-size: 13px; line-height: 1.6; }
@@ -192,7 +197,7 @@
   .text-block ul { padding-left: 15px; list-style-type: none; }
   .text-block li { margin-bottom: 6px; position: relative; padding-left: 15px; }
   .text-block li::before { content: '•'; color: var(--gold); position: absolute; left: 0; }
-  
+
   .alert-box {
     background: rgba(255, 215, 0, 0.1);
     border: 1px dashed var(--gold);
@@ -212,34 +217,34 @@
 
   <div id="bg-particles"></div>
 
-  <h1><span class="star left">⭐</span>Золотая Удача<span class="star right">⭐</span></h1>
-  
+  <h1>Золотая Удача</h1>
+
   <div class="balance" id="balance">Загружаем...</div>
 
   <div class="wheel-container">
-    <div class="wheel-bg"></div>
-    <div class="wheel-icon" id="wheel">🎁</div>
+    <div class="wheel-pointer"></div>
+    <canvas id="wheelCanvas" class="idle"></canvas>
   </div>
 
   <div class="result" id="result"></div>
 
   <button class="btn btn-spin" id="spinBtn" onclick="spin()">Крутить!</button>
-  
-  <button class="btn btn-nick" onclick="changeNick()">✏️ Сменить игровой ник</button>
+
+  <button class="btn btn-nick" onclick="changeNick()">Сменить игровой ник</button>
 
   <a class="btn btn-donate" id="donateBtn" href="#" target="_blank">
-    💸 Задонать 100 ₽ = 1 прокрутка
+    Задонать 100 ₽ = 1 прокрутка
     <small>в сообщении к донату напиши свой @ник</small>
   </a>
 
   <div class="glass text-block">
-    <h3>📌 Как играть</h3>
+    <h3>Как играть</h3>
     <ul>
       <li>Нажми «Крутить!» — так ты регистрируешься.</li>
       <li>Донат: 100 ₽ = 1 прокрутка.</li>
     </ul>
-    <div class="alert-box">❗ ВАЖНО: в сообщении к донату напиши свой @ник из Telegram. Без него прокрутки не зачислятся!</div>
-    <div class="alert-box">🔄 После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку.</div>
+    <div class="alert-box">ВАЖНО: в сообщении к донату напиши свой @ник из Telegram. Без него прокрутки не зачислятся!</div>
+    <div class="alert-box">После оплаты ЗАКРОЙ и ЗАНОВО открой рулетку.</div>
     <ul>
       <li>Прокрутки придут автоматически за 1–2 минуты.</li>
       <li>Ошибся в нике? Нажми «Сменить игровой ник».</li>
@@ -247,8 +252,18 @@
   </div>
 
   <div class="glass text-block prizes-list">
-    <h3>🎁 Что можно выиграть</h3>
+    <h3>Что можно выиграть</h3>
     <ul id="prizeList"></ul>
+  </div>
+
+  <!-- Модалка победы -->
+  <div class="win-overlay" id="winOverlay">
+    <div class="win-card">
+      <h2>Победа!</h2>
+      <div class="prize-name" id="winPrize">—</div>
+      <p>Сделай скриншот и отправь админу, чтобы забрать приз!</p>
+      <button class="btn btn-spin" onclick="closeWin()">Круто!</button>
+    </div>
   </div>
 
 <script>
@@ -257,17 +272,161 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-const elWheel = document.getElementById('wheel');
+const elWheel = document.getElementById('wheelCanvas');
 const elResult = document.getElementById('result');
 const elBalance = document.getElementById('balance');
 const elSpinBtn = document.getElementById('spinBtn');
+const elWinOverlay = document.getElementById('winOverlay');
+const ctx = elWheel.getContext('2d');
 
 document.getElementById('donateBtn').href = DONATE_URL;
 
-// Простая анимация частиц на фоне (без внешних библиотек)
+// ===== Сектора: заполняются с сервера, до ответа — заглушка =====
+let WHEEL_PRIZES = [
+  { label: 'Пусто',      color: '#6b4a0a' },
+  { label: 'Малый приз', color: '#1f6feb' },
+  { label: 'Приз',       color: '#3ddc84' },
+  { label: 'Бонус',      color: '#a855f7' },
+  { label: 'Джекпот',    color: '#ef4444' },
+  { label: 'Бонус x2',   color: '#0ea5e9' },
+  { label: 'Пусто',      color: '#5a5a5a' },
+  { label: 'Супер-приз', color: '#f59e0b' },
+];
+
+// ===== Рисуем колесо на canvas =====
+function drawWheel() {
+  const size = 290;
+  const dpr = window.devicePixelRatio || 1;
+  elWheel.width = size * dpr;
+  elWheel.height = size * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const cx = size / 2, cy = size / 2;
+  const rimW = 14;
+  const R = size / 2 - rimW / 2 - 2;
+  const n = WHEEL_PRIZES.length;
+  const step = 2 * Math.PI / n;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // Золотой обод
+  const rimGrad = ctx.createLinearGradient(0, 0, size, size);
+  rimGrad.addColorStop(0, '#fff3b0');
+  rimGrad.addColorStop(0.5, '#c9a10a');
+  rimGrad.addColorStop(1, '#7a5c00');
+  ctx.beginPath();
+  ctx.arc(cx, cy, R + rimW / 2, 0, 2 * Math.PI);
+  ctx.lineWidth = rimW;
+  ctx.strokeStyle = rimGrad;
+  ctx.stroke();
+
+  // Сектора
+  WHEEL_PRIZES.forEach((p, i) => {
+    const a0 = i * step, a1 = a0 + step;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, a0 - Math.PI / 2, a1 - Math.PI / 2);
+    ctx.closePath();
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,215,0,.75)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // Затемнение к краю — объём
+  const shade = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R);
+  shade.addColorStop(0, 'rgba(0,0,0,0)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, 2 * Math.PI);
+  ctx.fillStyle = shade;
+  ctx.fill();
+
+  // «Лампочки» на ободе в местах стыка секторов
+  for (let i = 0; i < n; i++) {
+    const a = i * step - Math.PI / 2;
+    const bx = cx + Math.cos(a) * (R + rimW / 2);
+    const by = cy + Math.sin(a) * (R + rimW / 2);
+    ctx.beginPath();
+    ctx.arc(bx, by, 3.5, 0, 2 * Math.PI);
+    ctx.fillStyle = '#fff8d6';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 9;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Названия призов вдоль радиуса
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  WHEEL_PRIZES.forEach((p, i) => {
+    const a = i * step + step / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+    let label = p.label;
+    if (label.length > 14) label = label.slice(0, 13) + '…';
+    ctx.font = '600 12px Unbounded, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,.85)';
+    ctx.shadowBlur = 5;
+    ctx.fillText(label, 0, -R * 0.62);
+    ctx.restore();
+  });
+
+  // Центральная втулка
+  const hubR = 27;
+  const hubGrad = ctx.createRadialGradient(cx, cy - 7, 4, cx, cy, hubR);
+  hubGrad.addColorStop(0, '#fff3b0');
+  hubGrad.addColorStop(1, '#6e5400');
+  ctx.beginPath();
+  ctx.arc(cx, cy, hubR, 0, 2 * Math.PI);
+  ctx.fillStyle = hubGrad;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fff3c4';
+  ctx.stroke();
+
+  ctx.fillStyle = '#3a2a00';
+  ctx.font = '800 20px Unbounded, sans-serif';
+  ctx.fillText('★', cx, cy + 1);
+}
+
+// Перерисовать, когда шрифт точно загрузился
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(drawWheel);
+}
+drawWheel();
+
+// ===== Звук тиков (синтез, без файлов) =====
+let audioCtx = null;
+function tick() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'square';
+    o.frequency.value = 900;
+    g.gain.setValueAtTime(0.06, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.05);
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.06);
+  } catch (e) {}
+}
+
+// Вибро-отклик Telegram
+function haptic(type) {
+  try {
+    if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred(type);
+  } catch (e) {}
+}
+
+// Анимация частиц на фоне
 function createParticles() {
   const container = document.getElementById('bg-particles');
-  for(let i=0; i<20; i++) {
+  for (let i = 0; i < 20; i++) {
     let p = document.createElement('div');
     p.style.position = 'absolute';
     p.style.width = p.style.height = Math.random() * 4 + 1 + 'px';
@@ -277,8 +436,6 @@ function createParticles() {
     p.style.left = Math.random() * 100 + '%';
     p.style.top = Math.random() * 100 + '%';
     p.style.boxShadow = '0 0 10px #FFD700';
-    
-    // Анимация движения
     p.animate([
       { transform: 'translateY(0px)' },
       { transform: `translateY(-${Math.random() * 200 + 100}px)` }
@@ -299,8 +456,10 @@ async function loadPrizes() {
   try {
     const r = await fetch('/api/prizes');
     const j = await r.json();
-    if (j.ok) {
-      document.getElementById('prizeList').innerHTML = 
+    if (j.ok && Array.isArray(j.prizes) && j.prizes.length) {
+      WHEEL_PRIZES = j.prizes.map(p => ({ label: p.label, color: p.color || '#8a6d00' }));
+      drawWheel();
+      document.getElementById('prizeList').innerHTML =
         j.prizes.map(p => `<li style="color:${p.color}">${p.label}</li>`).join('');
     }
   } catch (e) {}
@@ -336,7 +495,7 @@ async function loadBalance() {
     } catch (e) {}
     await new Promise(r => setTimeout(r, 1500));
   }
-  elBalance.textContent = '⚠️ Сервер спит. Нажми «Крутить!», чтобы разбудить.';
+  elBalance.textContent = 'Сервер спит. Нажми «Крутить!», чтобы разбудить.';
 }
 
 async function changeNick() {
@@ -357,17 +516,52 @@ async function changeNick() {
   loadBalance();
 }
 
+function closeWin() {
+  elWinOverlay.classList.remove('show');
+}
+
+// ===== Вращение колеса =====
+let currentRotation = 0;
+
+function spinWheelTo(prizeIndex, onDone) {
+  elWheel.classList.remove('idle');
+
+  const n = WHEEL_PRIZES.length;
+  const stepDeg = 360 / n;
+  const extraSpins = 5 + Math.floor(Math.random() * 3);
+  // центр сектора должен встать под стрелку (стрелка сверху = 0°)
+  const target = (360 - (prizeIndex * stepDeg + stepDeg / 2)) % 360;
+  const jitter = (Math.random() - 0.5) * (stepDeg - 24);
+
+  currentRotation += 360 * extraSpins + (((target + jitter) - (currentRotation % 360)) % 360 + 360) % 360;
+  elWheel.style.transform = `rotate(${currentRotation}deg)`;
+
+  // тики: быстро в начале, замедляются к остановке
+  let delay = 55;
+  const tickLoop = () => {
+    if (delay > 450) return;
+    tick();
+    delay *= 1.13;
+    setTimeout(tickLoop, delay);
+  };
+  tickLoop();
+
+  setTimeout(onDone, 4600);
+}
+
 async function spin() {
+  if (elSpinBtn.disabled) return;
   elResult.style.display = 'none';
   elSpinBtn.disabled = true;
+  haptic('light');
 
-  const faces = ['🎁', '💎', '🍀', '⭐', '🔥', '🎩', '🥇', '💰'];
-  let n = 0;
-  let anim = setInterval(() => {
-    elWheel.textContent = faces[n % faces.length];
-    elWheel.style.transform = `rotate(${n * 45}deg) scale(1.1)`;
-    n++;
-  }, 80);
+  let stopped = false;
+  const finish = () => {
+    if (stopped) return;
+    stopped = true;
+    elSpinBtn.disabled = false;
+    loadBalance();
+  };
 
   try {
     const r = await fetch('/api/spin', {
@@ -377,40 +571,46 @@ async function spin() {
     });
     const j = await r.json();
 
-    clearInterval(anim);
-    elWheel.style.transform = 'rotate(0deg) scale(1)';
-
     if (j.ok) {
-      elWheel.textContent = '🎉';
-      elResult.className = 'result win';
-      elResult.innerHTML = `🎁 Выпало: <b>${j.prize.label}</b><br>Осталось: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
-      
-      // ЗАПУСК КОНФЕТТИ
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#FFD700', '#FFA500', '#FFFFFF', '#FF8C00']
+      // ищем сектор, совпадающий с призом с сервера
+      const label = j.prize.label || '';
+      let idx = WHEEL_PRIZES.findIndex(p => p.label === label);
+      if (idx < 0) idx = WHEEL_PRIZES.findIndex(p => label.toLowerCase().includes(p.label.toLowerCase()));
+      if (idx < 0) idx = Math.floor(Math.random() * WHEEL_PRIZES.length);
+
+      spinWheelTo(idx, () => {
+        haptic('medium');
+        confetti({
+          particleCount: 160,
+          spread: 85,
+          origin: { y: 0.55 },
+          colors: ['#FFD700', '#FFA500', '#FFFFFF', '#FF8C00']
+        });
+        document.getElementById('winPrize').textContent = j.prize.label;
+        elWinOverlay.classList.add('show');
+        elResult.className = 'result win';
+        elResult.innerHTML = `Выпало: <b>${j.prize.label}</b><br>Осталось: <b>${j.spinsLeft}</b><br><small>Сделай скриншот и отправь админу!</small>`;
+        elResult.style.display = 'block';
+        finish();
       });
-    } else if (j.error === 'no_spins') {
-      elWheel.textContent = '🎰';
-      elResult.className = 'result fail';
-      elResult.innerHTML = `😕 Нет прокрутов.<br>Задонать 100 ₽ = 1 прокрутка!`;
-    } else {
-      elWheel.textContent = '🎰';
-      elResult.className = 'result fail';
-      elResult.innerHTML = `⚠️ ${j.message || j.error}`;
+      return;
     }
-  } catch (e) {
-    clearInterval(anim);
-    elWheel.style.transform = 'rotate(0deg) scale(1)';
-    elWheel.textContent = '🎰';
-    elResult.className = 'result fail';
-    elResult.innerHTML = '⚠️ Ошибка сети.';
-  } finally {
-    elSpinBtn.disabled = false;
+
+    if (j.error === 'no_spins') {
+      haptic('heavy');
+      elResult.className = 'result fail';
+      elResult.innerHTML = `Нет прокрутов.<br>Задонать 100 ₽ = 1 прокрутка!`;
+    } else {
+      elResult.className = 'result fail';
+      elResult.innerHTML = `${j.message || j.error}`;
+    }
     elResult.style.display = 'block';
-    loadBalance();
+    finish();
+  } catch (e) {
+    elResult.className = 'result fail';
+    elResult.innerHTML = 'Ошибка сети.';
+    elResult.style.display = 'block';
+    finish();
   }
 }
 
