@@ -141,7 +141,30 @@ async function grantGoalBonus(u) {
   return false;
 }
 
-// личное сообщение: chat_id или (как фолбэк) telegram_id
+// сообщение в группу: логируем ошибки, чтобы было видно в Render
+async function sendTelegramMessage(chatId, text) {
+  if (!BOT_TOKEN || !chatId) {
+    if (!chatId) console.log('TG: не задан chat_id, сообщение не отправлено: ' + text.slice(0, 40));
+    return false;
+  }
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      console.log('TG: ошибка отправки в ' + chatId + ' -> ' + r.status + ' ' + body.slice(0, 200));
+    }
+    return r.ok;
+  } catch (e) {
+    console.log('TG: сбой отправки в ' + chatId + ': ' + e.message);
+    return false;
+  }
+}
+
+// личное сообщение игроку: chat_id или (фолбэк) telegram_id
 async function notifyUser(u, text) {
   const target = u.chat_id || u.telegram_id;
   const ok = await sendTelegramMessage(target, text);
@@ -150,18 +173,6 @@ async function notifyUser(u, text) {
       (u.username || u.telegram_id) + ' — пусть нажмёт Start у бота');
   }
   return ok;
-}
-
-async function sendTelegramMessage(chatId, text) {
-  if (!BOT_TOKEN || !chatId) return false;
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
-    });
-    return r.ok;
-  } catch (e) { return false; }
 }
 
 function randomPromoCode() {
@@ -216,9 +227,9 @@ app.post('/api/spin', async (req, res) => {
   const name = u.game_nick || u.username || ('id' + u.telegram_id);
   console.log('Взрыв: игрок ' + name + ' (' + u.telegram_id + ') -> ' + prize.name);
 
-  // уведомление игроку
+  // игроку в личку
   notifyUser(u, `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
-  // уведомление в группу админа
+  // админу в группу: кто и что выиграл
   sendTelegramMessage(GROUP_CHAT_ID,
     `🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
     (u.game_nick ? `\nНик в игре: ${u.game_nick}` : ''));
@@ -245,6 +256,8 @@ app.post('/api/redeem-promo', async (req, res) => {
   await saveUser(u);
 
   notifyUser(u, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
+  sendTelegramMessage(GROUP_CHAT_ID,
+    `🎟 <b>${u.username || u.telegram_id}</b> активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -391,8 +404,17 @@ async function pollBotUpdates() {
     for (const upd of (j.result || [])) {
       if (upd.update_id >= tgOffset) tgOffset = upd.update_id + 1;
       const msg = upd.message;
-      // сохраняем chat_id ТОЛЬКО из личных сообщений игроку
-      if (msg && msg.from && msg.chat && msg.chat.type === 'private') {
+      if (!msg || !msg.chat) continue;
+
+      // id групп показываем в логах — чтобы можно было вставить в GROUP_CHAT_ID
+      if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
+        console.log('TG: сообщение из группы "' + (msg.chat.title || '') +
+          '", chat_id = ' + msg.chat.id + ' ← это число для GROUP_CHAT_ID');
+        continue;
+      }
+
+      // личные чаты — сохраняем игроку, чтобы бот мог писать ему
+      if (msg.chat.type === 'private' && msg.from) {
         const u = await getUser(msg.from.id);
         if (u && String(u.chat_id || '') !== String(msg.chat.id)) {
           await supabase.from('users')
@@ -420,7 +442,7 @@ async function pollDonations() {
     const j1 = await r1.json();
     const batches = [j1.data || []];
     if (j1.meta && j1.meta.last_page > 1) {
-      await new Promise(res => setTimeout(res, 1100));
+      await new Promise(res => setTimeout(res, 1100)); // лимит DA: 1 запрос в секунду
       const r2 = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=' + j1.meta.last_page, {
         headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
       });
@@ -520,7 +542,7 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
   <div class="progress-label" id="progLabel"></div>
 </div>
 
-<h2>💵 Последний донат</h2><div id="lastDonation">—</div>
+<h2>💵 Последний донat</h2><div id="lastDonation">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
 <h2>👥 Игроки</h2>
 <div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
