@@ -28,12 +28,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ВАЖНО: RLS на таблицах users/donations/promos должен быть отключён,
-// иначе UPDATE молча не срабатывает. Проверка/исправление в SQL Editor:
-//   alter table public.users disable row level security;
-//   alter table public.donations disable row level security;
-//   alter table public.promos disable row level security;
-
 // ====== НАСТРОЙКИ ======
 const PROGRESS_GOAL = 10000;
 const GOAL_BONUS_SPINS = 5;
@@ -67,6 +61,11 @@ const PRIZES = [
   { name: 'Премиум 30 дней',      color: '#4caf50', chance: 0.5 },
   { name: 'Venga II 10k',         color: '#ffd54f', chance: 0.001 }
 ];
+
+function prizeColor(name) {
+  const p = PRIZES.find(x => x.name === name);
+  return p ? p.color : '#FFD700';
+}
 
 // выбор приза по шансам (в процентах)
 function pickPrize() {
@@ -128,7 +127,7 @@ async function ensureUser(tgUser, chatId) {
   return u;
 }
 
-// сохранение игрока с проверкой ошибки (RLS-блокировка теперь будет видна в логах)
+// сохранение игрока с проверкой ошибки
 async function saveUser(u) {
   const { error } = await supabase.from('users').update({
     spins: u.spins,
@@ -277,6 +276,16 @@ app.post('/api/spin', async (req, res) => {
   const prize = pickPrize();
   console.log('Взрыв: игрок ' + playerLine(u) + ' (' + u.telegram_id + ') -> ' + prize.name);
 
+  // история выигрышей для админки
+  const { error: winErr } = await supabase.from('wins').insert({
+    telegram_id: String(u.telegram_id),
+    username: u.username || '',
+    game_nick: u.game_nick || null,
+    prize: prize.name,
+    ts: Date.now()
+  });
+  if (winErr) console.log('SUPABASE: не записал выигрыш -> ' + winErr.message);
+
   const spinText =
     `🎰 ${playerLine(u)}\n` +
     `Выпало: «${prize.name}»\n` +
@@ -340,12 +349,16 @@ app.get('/api/admin/data', async (req, res) => {
     .order('ts', { ascending: false }).limit(20);
   const { data: lastDonation } = await supabase
     .from('donations').select('*').order('ts', { ascending: false }).limit(1);
+  // история выигрышей: свежие сверху
+  const { data: wins } = await supabase
+    .from('wins').select('*').order('ts', { ascending: false }).limit(50);
   let { data: promos } = await supabase
     .from('promos').select('*').order('code', { ascending: true }).limit(50);
   // технические маркеры промокода дня не показываем
   promos = (promos || []).filter(p => !String(p.code).startsWith('DAY-'));
 
   const totalDonated = (users || []).reduce((s, u) => s + Number(u.donated || 0), 0);
+  const totalSpins = (users || []).reduce((s, u) => s + Number(u.spins || 0), 0);
 
   res.json({
     ok: true,
@@ -356,8 +369,11 @@ app.get('/api/admin/data', async (req, res) => {
     })),
     unrecognized: unrecognized || [],
     lastDonation: (lastDonation && lastDonation[0]) || null,
+    wins: wins || [],
     promos: promos,
-    totalDonated
+    totalDonated,
+    totalSpins,
+    totalWins: (wins || []).length
   });
 });
 
@@ -591,7 +607,7 @@ async function pollDonations() {
         await grantGoalBonus(user);
         const saved = await saveUser(user);
         if (!saved) {
-          console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id) + ' — проверь RLS в Supabase');
+          console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id));
         }
 
         const { error: insErr } = await supabase.from('donations').insert({
@@ -650,17 +666,30 @@ button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-we
 button.gray{background:#555;color:#fff}
 input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius:6px;padding:6px}
 .muted{color:#888;font-size:12px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.stat{background:#1a1a1a;border:1px solid rgba(255,215,0,.35);border-radius:10px;padding:8px 14px;min-width:120px}
+.stat .num{color:#FFD700;font-size:18px;font-weight:bold}
+.stat .lbl{color:#888;font-size:11px}
 .progress-wrap{margin:14px 0 4px}
 .progress-bar{height:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.4);border-radius:10px;overflow:hidden}
 .progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);box-shadow:0 0 10px rgba(255,215,0,.5);transition:width .6s ease}
 .progress-fill.done{background:linear-gradient(90deg,#3ddc84,#aef7cf)}
 .progress-label{font-size:12px;color:#b8a878;margin-top:5px}
 .progress-label.done{color:#3ddc84;font-weight:bold}
+.prize-badge{display:inline-block;padding:2px 8px;border-radius:8px;color:#111;font-weight:bold;font-size:12px}
+.jackpot{animation:glow 1.5s ease-in-out infinite alternate}
+@keyframes glow{from{box-shadow:0 0 4px #ffd54f}to{box-shadow:0 0 14px #ffd54f}}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#FFD700;color:#000;padding:8px 16px;border-radius:10px;font-weight:bold;display:none;z-index:9}
 </style></head><body>
 <h1>🛠 Админка — Золотая Удача</h1>
-<div class="muted" id="stats"></div>
+
+<div class="stats">
+  <div class="stat"><div class="num" id="stDonated">0 ₽</div><div class="lbl">всего задонатили</div></div>
+  <div class="stat"><div class="num" id="stPlayers">0</div><div class="lbl">игроков</div></div>
+  <div class="stat"><div class="num" id="stSpins">0</div><div class="lbl">взрывов у игроков</div></div>
+  <div class="stat"><div class="num" id="stWins">0</div><div class="lbl">выигрышей (последние 50)</div></div>
+</div>
 
 <div class="progress-wrap">
   <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
@@ -668,6 +697,7 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 </div>
 
 <h2>💵 Последний донат</h2><div id="lastDonation">—</div>
+<h2>🏆 Выигрыши</h2><div id="wins">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
 <h2>👥 Игроки</h2>
 <div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
@@ -692,14 +722,22 @@ const GOAL = 10000;
 let USERS = [];
 function fmt(n){return Number(n).toLocaleString('ru-RU')}
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(function(){el.style.display='none'},2500)}
+function timeStr(ts){
+  if(!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+}
 
 async function load(){
   const r = await fetch('/api/admin/data?key=' + KEY);
   const j = await r.json();
   if(!j.ok){ document.body.innerHTML = 'Ошибка ключа'; return; }
   USERS = j.users;
-  const withChat = j.users.filter(function(u){return u.hasChat}).length;
-  document.getElementById('stats').textContent = 'Всего задонатили: ' + fmt(j.totalDonated) + ' ₽ · игроков: ' + j.users.length + ' · уведомления включили: ' + withChat;
+
+  document.getElementById('stDonated').textContent = fmt(j.totalDonated) + ' ₽';
+  document.getElementById('stPlayers').textContent = j.users.length;
+  document.getElementById('stSpins').textContent = fmt(j.totalSpins);
+  document.getElementById('stWins').textContent = j.wins.length;
 
   const fill = document.getElementById('progFill');
   const label = document.getElementById('progLabel');
@@ -717,9 +755,17 @@ async function load(){
 
   const ld = j.lastDonation;
   document.getElementById('lastDonation').innerHTML = ld
-    ? ld.amount + ' ₽ от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' взрывов' +
-      (ld.recognized ? '' : ' (НЕ РАСПОЗНАН)')
+    ? '<div class="stat" style="display:inline-block"><div class="num">' + ld.amount + ' ₽</div><div class="lbl">от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' взрывов' + (ld.recognized ? '' : ' (НЕ РАСПОЗНАН)') + '</div></div>'
     : 'Пока донатов не было';
+
+  document.getElementById('wins').innerHTML = j.wins.length
+    ? '<table><tr><th>Когда</th><th>Игрок</th><th>Ник в игре</th><th>Выигрыш</th></tr>' +
+      j.wins.map(w => {
+        const isJackpot = w.prize === 'Venga II 10k';
+        return '<tr><td>' + timeStr(w.ts) + '</td><td>@' + (w.username || w.telegram_id) + '</td><td>' + (w.game_nick || '—') + '</td>' +
+          '<td><span class="prize-badge' + (isJackpot ? ' jackpot' : '') + '" style="background:' + prizeColorJs(w.prize) + '">' + w.prize + '</span></td></tr>';
+      }).join('') + '</table>'
+    : 'Выигрышей пока не было';
 
   document.getElementById('unrecognized').innerHTML = j.unrecognized.length
     ? '<div class="row" style="margin-bottom:8px"><button class="gray" onclick="clearAll()">🗑 Скрыть все нераспознанные</button></div>' +
@@ -737,6 +783,11 @@ async function load(){
         (p.used_by ? 'да (' + p.used_by + ')' : 'нет') + '</td><td>' +
         '<button class="gray" onclick="delPromo(\\'' + p.code + '\\')">✕</button></td></tr>').join('') + '</table>'
     : 'Нет промокодов';
+}
+
+function prizeColorJs(name){
+  const MAP = {'Любая наживка 5 шт':'#ffcf40','Приманки на выбор':'#4caf50','1 бутылка алкоголя':'#ef4444','Кофе 500':'#d2a24c','Кофе 1000':'#b78cff','Золотая монета 1 шт':'#ffa726','Премиум 3 дня':'#4db8ff','Майка 10 шт':'#ff6ec7','Нос 10 шт':'#9e9e9e','Бокоплав 10 шт':'#7ec84a','Медведка 10 шт':'#7ec84a','Дрейсена 10 шт':'#4db8ff','Перловица 10 шт':'#b78cff','Сбитень 10 шт':'#ff7043','Золотая монетка 2 шт':'#ffd54f','Премиум 7 дней':'#4db8ff','Премиум 30 дней':'#4caf50','Venga II 10k':'#ffd54f'};
+  return MAP[name] || '#FFD700';
 }
 
 function renderUsers(){
