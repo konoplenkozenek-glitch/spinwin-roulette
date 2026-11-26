@@ -28,8 +28,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ВАЖНО: если в Supabase на таблицах users/donations/promos включён RLS,
-// UPDATE может молча не срабатывать. В SQL Editor выполни один раз:
+// ВАЖНО: RLS на таблицах users/donations/promos должен быть отключён,
+// иначе UPDATE молча не срабатывает. Проверка/исправление в SQL Editor:
 //   alter table public.users disable row level security;
 //   alter table public.donations disable row level security;
 //   alter table public.promos disable row level security;
@@ -121,7 +121,7 @@ async function ensureUser(tgUser, chatId) {
     };
     const { error } = await supabase.from('users').insert(u);
     if (error) console.log('SUPABASE: не создал игрока ' + id + ' -> ' + error.message);
-  } else if (chatId && !u.chat_id) {
+  } else if (chatId && String(u.chat_id || '') !== String(chatId)) {
     u.chat_id = String(chatId);
     await supabase.from('users').update({ chat_id: u.chat_id }).eq('telegram_id', id);
   }
@@ -492,12 +492,8 @@ async function pollBotUpdates() {
         // подсказка в логах: твой личный chat_id для ADMIN_CHAT_ID
         console.log('TG: личное сообщение от "' + (msg.from.username || msg.from.first_name || '?') +
           '", chat_id = ' + msg.chat.id + ' (если это ты — вставь это число в ADMIN_CHAT_ID)');
-        const u = await getUser(msg.from.id);
-        if (u && String(u.chat_id || '') !== String(msg.chat.id)) {
-          await supabase.from('users')
-            .update({ chat_id: String(msg.chat.id) })
-            .eq('telegram_id', String(msg.from.id));
-        }
+        // создаём игрока, если его ещё нет, и в любом случае сохраняем chat_id
+        await ensureUser(msg.from, String(msg.chat.id));
       }
     }
   } catch (e) { /* повторим позже */ }
@@ -750,7 +746,7 @@ function renderUsers(){
     (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
     String(u.telegram_id).indexOf(q) >= 0);
   document.getElementById('users').innerHTML = list.length
-    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Взрывы</th><th>Донat</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
+    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
       list.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
       '</td><td>' + (u.hasChat ? '🔔' : '🔕') + '</td>' +
       '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
