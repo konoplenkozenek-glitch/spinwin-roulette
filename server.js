@@ -139,13 +139,23 @@ function playerLine(u) {
     (u.game_nick ? ' (игровой ник: ' + u.game_nick + ')' : '');
 }
 
+// это сам админ? (защита от дублей уведомлений в его чат)
+function isAdminUser(u) {
+  if (!ADMIN_CHAT_ID) return false;
+  return String(u.chat_id || '') === String(ADMIN_CHAT_ID) ||
+         String(u.telegram_id || '') === String(ADMIN_CHAT_ID);
+}
+
 async function grantGoalBonus(u) {
   if (Number(u.donated) >= PROGRESS_GOAL && !u.goal_bonus) {
     u.goal_bonus = 1;
     u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
     await saveUser(u);
-    notifyUser(u, `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
-    notifyAdmin(`🎉 ${playerLine(u)} закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
+    const text = `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`;
+    const sentToPlayer = await notifyUser(u, text);
+    if (!sentToPlayer || !isAdminUser(u)) {
+      notifyAdmin(`🎉 ${playerLine(u)} закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
+    }
     return true;
   }
   return false;
@@ -245,16 +255,17 @@ app.post('/api/spin', async (req, res) => {
   const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
   console.log('Взрыв: игрок ' + playerLine(u) + ' (' + u.telegram_id + ') -> ' + prize.name);
 
-  // текст в новом формате
   const spinText =
     `🎰 ${playerLine(u)}\n` +
     `Выпало: «${prize.name}»\n` +
     `Круток осталось: ${u.spins}`;
 
   // игроку в личку
-  notifyUser(u, spinText);
-  // админу в личку: кто и что выиграл
-  notifyAdmin(spinText);
+  const sentToPlayer = await notifyUser(u, spinText);
+  // админу — только если это НЕ сам админ (иначе дубль в его чате)
+  if (!sentToPlayer || !isAdminUser(u)) {
+    notifyAdmin(spinText);
+  }
 
   res.json({ ok: true, spinsLeft: u.spins, prize: prize });
 });
@@ -277,8 +288,11 @@ app.post('/api/redeem-promo', async (req, res) => {
   u.spins = Number(u.spins) + (promo.spins || 1);
   await saveUser(u);
 
-  notifyUser(u, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
-  notifyAdmin(`🎟 ${playerLine(u)} активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
+  const promoText = `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`;
+  const sentToPlayer = await notifyUser(u, promoText);
+  if (!sentToPlayer || !isAdminUser(u)) {
+    notifyAdmin(`🎟 ${playerLine(u)} активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
+  }
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -543,9 +557,19 @@ async function pollDonations() {
           spins_added: spins, recognized: 1, ts: Date.now()
         });
         console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
-        notifyUser(user,
+
+        const donText =
+          `💰 ${playerLine(user)}\n` +
+          `Донат: ${amount} ₽\n` +
+          `Зачислено круток: ${spins}`;
+
+        // игроку в личку
+        const sentToPlayer = await notifyUser(user,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
-        notifyAdmin(`💰 Донат ${amount} ₽ от ${playerLine(user)} — зачислено ${spins} взрывов.`);
+        // админу — только если это НЕ сам админ
+        if (!sentToPlayer || !isAdminUser(user)) {
+          notifyAdmin(donText);
+        }
       } else {
         await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
