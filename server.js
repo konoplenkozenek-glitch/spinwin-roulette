@@ -707,10 +707,10 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 .prize-badge{display:inline-block;padding:2px 7px;border-radius:8px;color:#111;font-weight:bold;font-size:11px}
 .jackpot{animation:glow 1.5s ease-in-out infinite alternate}
 @keyframes glow{from{box-shadow:0 0 4px #ffd54f}to{box-shadow:0 0 14px #ffd54f}}
-.scroll-box{max-height:240px;overflow-y:auto;border:1px solid #333;border-radius:8px}
-.win-row{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid #2a2a2a;font-size:12px}
-.win-row .when{color:#888;min-width:118px;flex-shrink:0}
-.win-row .who{min-width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scroll-box{max-height:200px;overflow-y:auto;border:1px solid #333;border-radius:8px;max-width:420px}
+.win-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #2a2a2a;font-size:11px}
+.win-row .when{color:#888;min-width:74px;flex-shrink:0;font-size:10px}
+.win-row .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#FFD700;color:#000;padding:8px 16px;border-radius:10px;font-weight:bold;display:none;z-index:9}
 </style></head><body>
@@ -764,7 +764,7 @@ function toast(t){const el=document.getElementById('toast');el.textContent=t;el.
 function timeStr(ts){
   if(!ts) return '—';
   const d = new Date(ts);
-  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
 }
 function prizeColorJs(name){
   const MAP = {'Любая наживка 5 шт':'#ffcf40','Приманки на выбор':'#4caf50','1 бутылка алкоголя':'#ef4444','Кофе 500':'#d2a24c','Кофе 1000':'#b78cff','Золотая монета 1 шт':'#ffa726','Премиум 3 дня':'#4db8ff','Майка 10 шт':'#ff6ec7','Нос 10 шт':'#9e9e9e','Бокоплав 10 шт':'#7ec84a','Медведка 10 шт':'#7ec84a','Дрейсена 10 шт':'#4db8ff','Перловица 10 шт':'#b78cff','Сбитень 10 шт':'#ff7043','Золотая монетка 2 шт':'#ffd54f','Премиум 7 дней':'#4db8ff','Премиум 30 дней':'#4caf50','Venga II 10k':'#ffd54f'};
