@@ -18,6 +18,10 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
+
+// Чат АДМИНА (твоя личка с ботом): выигрыши, донаты, алерты
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '';
+// Группа: ТОЛЬКО промокод дня раз в сутки
 const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || '';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -27,6 +31,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== НАСТРОЙКИ ======
 const PROGRESS_GOAL = 10000;
 const GOAL_BONUS_SPINS = 5;
+const DAILY_PROMO_HOUR = 12; // час (по Москве), когда в группу уходит промокод дня
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
@@ -134,14 +139,13 @@ async function grantGoalBonus(u) {
     u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
     await saveUser(u);
     notifyUser(u, `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
-    sendTelegramMessage(GROUP_CHAT_ID,
-      `🎉 <b>${u.username || u.telegram_id}</b> закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
+    notifyAdmin(`🎉 <b>${u.username || u.telegram_id}</b> закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
     return true;
   }
   return false;
 }
 
-// сообщение в группу: логируем ошибки, чтобы было видно в Render
+// отправка в любой чат с логированием ошибок
 async function sendTelegramMessage(chatId, text) {
   if (!BOT_TOKEN || !chatId) {
     if (!chatId) console.log('TG: не задан chat_id, сообщение не отправлено: ' + text.slice(0, 40));
@@ -164,7 +168,16 @@ async function sendTelegramMessage(chatId, text) {
   }
 }
 
-// личное сообщение игроку: chat_id или (фолбэк) telegram_id
+// админу (в личку от бота)
+async function notifyAdmin(text) {
+  if (!ADMIN_CHAT_ID) {
+    console.log('TG: ADMIN_CHAT_ID не задан — уведомление админу не отправлено: ' + text.slice(0, 60));
+    return false;
+  }
+  return sendTelegramMessage(ADMIN_CHAT_ID, text);
+}
+
+// игроку в личку (chat_id или фолбэк telegram_id)
 async function notifyUser(u, text) {
   const target = u.chat_id || u.telegram_id;
   const ok = await sendTelegramMessage(target, text);
@@ -229,9 +242,8 @@ app.post('/api/spin', async (req, res) => {
 
   // игроку в личку
   notifyUser(u, `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
-  // админу в группу: кто и что выиграл
-  sendTelegramMessage(GROUP_CHAT_ID,
-    `🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
+  // админу в личку: кто и что выиграл
+  notifyAdmin(`🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
     (u.game_nick ? `\nНик в игре: ${u.game_nick}` : ''));
 
   res.json({ ok: true, spinsLeft: u.spins, prize: prize });
@@ -243,7 +255,7 @@ app.post('/api/redeem-promo', async (req, res) => {
   const u = await ensureUser(tgUser, null);
 
   const code = String(req.body.code || '').trim().toUpperCase();
-  if (!code) return res.json({ ok: false, error: 'not_found' });
+  if (!code || code.startsWith('DAY-')) return res.json({ ok: false, error: 'not_found' });
 
   const { data: promo } = await supabase.from('promos').select('*').eq('code', code).maybeSingle();
   if (!promo) return res.json({ ok: false, error: 'not_found' });
@@ -256,8 +268,7 @@ app.post('/api/redeem-promo', async (req, res) => {
   await saveUser(u);
 
   notifyUser(u, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
-  sendTelegramMessage(GROUP_CHAT_ID,
-    `🎟 <b>${u.username || u.telegram_id}</b> активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
+  notifyAdmin(`🎟 <b>${u.username || u.telegram_id}</b> активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -282,8 +293,10 @@ app.get('/api/admin/data', async (req, res) => {
     .order('ts', { ascending: false }).limit(20);
   const { data: lastDonation } = await supabase
     .from('donations').select('*').order('ts', { ascending: false }).limit(1);
-  const { data: promos } = await supabase
+  let { data: promos } = await supabase
     .from('promos').select('*').order('code', { ascending: true }).limit(50);
+  // технические маркеры промокода дня не показываем
+  promos = (promos || []).filter(p => !String(p.code).startsWith('DAY-'));
 
   const totalDonated = (users || []).reduce((s, u) => s + Number(u.donated || 0), 0);
 
@@ -296,7 +309,7 @@ app.get('/api/admin/data', async (req, res) => {
     })),
     unrecognized: unrecognized || [],
     lastDonation: (lastDonation && lastDonation[0]) || null,
-    promos: promos || [],
+    promos: promos,
     totalDonated
   });
 });
@@ -386,7 +399,15 @@ app.post('/api/admin/broadcast', async (req, res) => {
   res.json({ ok: true, sent });
 });
 
-// ====== СБОР CHAT_ID ЧЕРЕЗ БОТА (только личные чаты) ======
+// тест: проверка личных уведомлений админу
+// https://твой-адрес.onrender.com/api/test-admin?key=ТВОЙ_ADMIN_KEY
+app.get('/api/test-admin', (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  notifyAdmin('🧪 Тест личных уведомлений — если видишь это, всё настроено!');
+  res.json({ ok: true, admin: ADMIN_CHAT_ID || '(ADMIN_CHAT_ID не задан)' });
+});
+
+// ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
 let tgOffset = 0;
 let getUpdatesBroken = false;
 async function pollBotUpdates() {
@@ -406,15 +427,10 @@ async function pollBotUpdates() {
       const msg = upd.message;
       if (!msg || !msg.chat) continue;
 
-      // id групп показываем в логах — чтобы можно было вставить в GROUP_CHAT_ID
-      if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
-        console.log('TG: сообщение из группы "' + (msg.chat.title || '') +
-          '", chat_id = ' + msg.chat.id + ' ← это число для GROUP_CHAT_ID');
-        continue;
-      }
-
-      // личные чаты — сохраняем игроку, чтобы бот мог писать ему
       if (msg.chat.type === 'private' && msg.from) {
+        // подсказка в логах: твой личный chat_id для ADMIN_CHAT_ID
+        console.log('TG: личное сообщение от "' + (msg.from.username || msg.from.first_name || '?') +
+          '", chat_id = ' + msg.chat.id + ' (если это ты — вставь это число в ADMIN_CHAT_ID)');
         const u = await getUser(msg.from.id);
         if (u && String(u.chat_id || '') !== String(msg.chat.id)) {
           await supabase.from('users')
@@ -427,6 +443,35 @@ async function pollBotUpdates() {
 }
 setInterval(pollBotUpdates, 15000);
 pollBotUpdates();
+
+// ====== ПРОМОКОД ДНЯ (раз в сутки в группу) ======
+async function maybePostDailyPromo() {
+  if (!GROUP_CHAT_ID) return;
+  try {
+    const now = new Date(Date.now() + 3 * 3600 * 1000); // московское время (UTC+3)
+    const dateStr = now.toISOString().slice(0, 10); // '2026-11-26'
+    const hour = now.getUTCHours();
+    if (hour < DAILY_PROMO_HOUR) return; // до DAILY_PROMO_HOUR не публикуем
+
+    // маркер на дату — защита от повтора
+    const markerCode = 'DAY-' + dateStr;
+    const { data: marker } = await supabase
+      .from('promos').select('code').eq('code', markerCode).maybeSingle();
+    if (marker) return;
+
+    const code = randomPromoCode();
+    await supabase.from('promos').insert({ code: markerCode, spins: 0 });
+    await supabase.from('promos').insert({ code: code, spins: 1 });
+
+    sendTelegramMessage(GROUP_CHAT_ID,
+      `🎟 <b>Промокод дня!</b>\nКод: <code>${code}</code>\n+1 взрыв тому, кто ПЕРВЫЙ введёт его в игре 💣`);
+    console.log('Промокод дня опубликован: ' + code);
+  } catch (e) {
+    console.log('Ошибка промокода дня: ' + e.message);
+  }
+}
+setInterval(maybePostDailyPromo, 10 * 60 * 1000); // проверка каждые 10 минут
+maybePostDailyPromo();
 
 // ====== ПОЛУЧЕНИЕ ДОНАТОВ С DONATIONALERTS ======
 async function pollDonations() {
@@ -490,16 +535,14 @@ async function pollDonations() {
         console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
         notifyUser(user,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
-        sendTelegramMessage(GROUP_CHAT_ID,
-          `💰 Донат ${amount} ₽ от <b>${user.username || user.telegram_id}</b> — зачислено ${spins} взрывов.`);
+        notifyAdmin(`💰 Донат ${amount} ₽ от <b>${user.username || user.telegram_id}</b> — зачислено ${spins} взрывов.`);
       } else {
         await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
           telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
         });
         console.log('DA: донат НЕ распознан (ник не найден или сумма < 100)');
-        sendTelegramMessage(GROUP_CHAT_ID,
-          `⚠️ Донат ${amount} ₽ не распознан. Сообщение: «${message || '—'}», username: ${username || '—'}. Зачисли вручную в админке.`);
+        notifyAdmin(`⚠️ Донат ${amount} ₽ не распознан. Сообщение: «${message || '—'}», username: ${username || '—'}. Зачисли вручную в админке.`);
       }
     }
   } catch (e) { /* повторим на следующем опросе */ }
@@ -542,7 +585,7 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
   <div class="progress-label" id="progLabel"></div>
 </div>
 
-<h2>💵 Последний донat</h2><div id="lastDonation">—</div>
+<h2>💵 Последний донат</h2><div id="lastDonation">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
 <h2>👥 Игроки</h2>
 <div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
