@@ -30,7 +30,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== НАСТРОЙКИ ======
 const DA_CUTOFF_HOURS = 24;  // обрабатывать только донаты за последние N часов
-const DAILY_PROMO_HOUR = 12; // час (по Москве) для промокода дня
+const DAILY_PROMO_HOUR = 5; // час (по Москве) для промокода дня
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
