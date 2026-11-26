@@ -133,13 +133,19 @@ function spinsForAmount(amount) {
   return total;
 }
 
+// строка игрока в формате: @ник (игровой ник: …)
+function playerLine(u) {
+  return '@' + (u.username || u.telegram_id) +
+    (u.game_nick ? ' (игровой ник: ' + u.game_nick + ')' : '');
+}
+
 async function grantGoalBonus(u) {
   if (Number(u.donated) >= PROGRESS_GOAL && !u.goal_bonus) {
     u.goal_bonus = 1;
     u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
     await saveUser(u);
     notifyUser(u, `🎉 Цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ достигнута! Тебе начислено +${GOAL_BONUS_SPINS} взрывов в подарок! 💣`);
-    notifyAdmin(`🎉 <b>${u.username || u.telegram_id}</b> закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
+    notifyAdmin(`🎉 ${playerLine(u)} закрыл цель ${PROGRESS_GOAL.toLocaleString('ru-RU')} ₽ — бонус +${GOAL_BONUS_SPINS} взрывов!`);
     return true;
   }
   return false;
@@ -237,14 +243,18 @@ app.post('/api/spin', async (req, res) => {
   await saveUser(u);
 
   const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
-  const name = u.game_nick || u.username || ('id' + u.telegram_id);
-  console.log('Взрыв: игрок ' + name + ' (' + u.telegram_id + ') -> ' + prize.name);
+  console.log('Взрыв: игрок ' + playerLine(u) + ' (' + u.telegram_id + ') -> ' + prize.name);
+
+  // текст в новом формате
+  const spinText =
+    `🎰 ${playerLine(u)}\n` +
+    `Выпало: «${prize.name}»\n` +
+    `Круток осталось: ${u.spins}`;
 
   // игроку в личку
-  notifyUser(u, `🎁 Ты выиграл: <b>${prize.name}</b>!\nВзрывов осталось: ${u.spins}`);
+  notifyUser(u, spinText);
   // админу в личку: кто и что выиграл
-  notifyAdmin(`🎰 <b>${name}</b> взорвал бомбу и выиграл: <b>${prize.name}</b>` +
-    (u.game_nick ? `\nНик в игре: ${u.game_nick}` : ''));
+  notifyAdmin(spinText);
 
   res.json({ ok: true, spinsLeft: u.spins, prize: prize });
 });
@@ -268,7 +278,7 @@ app.post('/api/redeem-promo', async (req, res) => {
   await saveUser(u);
 
   notifyUser(u, `🎟 Промокод ${code} принят: +${promo.spins || 1} взрыв!`);
-  notifyAdmin(`🎟 <b>${u.username || u.telegram_id}</b> активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
+  notifyAdmin(`🎟 ${playerLine(u)} активировал промокод ${code} (+${promo.spins || 1} взрыв)`);
   res.json({ ok: true, spins: u.spins });
 });
 
@@ -535,7 +545,7 @@ async function pollDonations() {
         console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
         notifyUser(user,
           `💥 Спасибо за донат ${amount} ₽! Зачислено ${spins} взрывов.\nОткрой игру и крути! 🎰`);
-        notifyAdmin(`💰 Донат ${amount} ₽ от <b>${user.username || user.telegram_id}</b> — зачислено ${spins} взрывов.`);
+        notifyAdmin(`💰 Донат ${amount} ₽ от ${playerLine(user)} — зачислено ${spins} взрывов.`);
       } else {
         await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
