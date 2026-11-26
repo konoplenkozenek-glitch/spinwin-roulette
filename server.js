@@ -41,25 +41,36 @@ const PACKAGES = [
 
 // ====== СПИСОК НАГРАД (выпадает при взрыве) ======
 const PRIZES = [
-  { name: 'Любая наживка 5 шт',  color: '#ffcf40' },
-  { name: 'Приманки на выбор',   color: '#4caf50' },
-  { name: '1 бутылка алкоголя',  color: '#ef4444' },
-  { name: 'Кофе 500',            color: '#d2a24c' },
-  { name: 'Кофе 1000',           color: '#b78cff' },
-  { name: 'Золотая монета 1 шт', color: '#ffa726' },
-  { name: 'Премиум 3 дня',       color: '#4db8ff' },
-  { name: 'Майка 10 шт',         color: '#ff6ec7' },
-  { name: 'Нос 10 шт',           color: '#9e9e9e' },
-  { name: 'Бокоплав 10 шт',      color: '#7ec84a' },
-  { name: 'Медведка 10 шт',      color: '#7ec84a' },
-  { name: 'Дрейсена 10 шт',      color: '#4db8ff' },
-  { name: 'Перловица 10 шт',     color: '#b78cff' },
-  { name: 'Сбитень 10 шт',       color: '#ff7043' },
-  { name: 'Золотая монетка 2 шт', color: '#ffd54f' },
-  { name: 'Премиум 7 дней',      color: '#4db8ff' },
-  { name: 'Премиум 30 дней',     color: '#4caf50' },
-  { name: 'Venga II 10k',        color: '#ffd54f' }
+  { name: 'Любая наживка 5 шт',   color: '#ffcf40', chance: 6.65 },
+  { name: 'Приманки на выбор',    color: '#4caf50', chance: 6.65 },
+  { name: '1 бутылка алкоголя',   color: '#ef4444', chance: 6.65 },
+  { name: 'Кофе 500',             color: '#d2a24c', chance: 6.65 },
+  { name: 'Кофе 1000',            color: '#b78cff', chance: 6.65 },
+  { name: 'Золотая монета 1 шт',  color: '#ffa726', chance: 6.65 },
+  { name: 'Премиум 3 дня',        color: '#4db8ff', chance: 5 },
+  { name: 'Майка 10 шт',          color: '#ff6ec7', chance: 6.65 },
+  { name: 'Нос 10 шт',            color: '#9e9e9e', chance: 6.65 },
+  { name: 'Бокоплав 10 шт',       color: '#7ec84a', chance: 6.65 },
+  { name: 'Медведка 10 шт',       color: '#7ec84a', chance: 6.65 },
+  { name: 'Дрейсена 10 шт',       color: '#4db8ff', chance: 6.65 },
+  { name: 'Перловица 10 шт',      color: '#b78cff', chance: 6.65 },
+  { name: 'Сбитень 10 шт',        color: '#ff7043', chance: 6.65 },
+  { name: 'Золотая монетка 2 шт', color: '#ffd54f', chance: 5 },
+  { name: 'Премиум 7 дней',       color: '#4db8ff', chance: 3 },
+  { name: 'Премиум 30 дней',      color: '#4caf50', chance: 0.5 },
+  { name: 'Venga II 10k',         color: '#ffd54f', chance: 0.001 }
 ];
+
+// выбор приза по шансам (в процентах)
+function pickPrize() {
+  const total = PRIZES.reduce((s, p) => s + p.chance, 0);
+  let r = Math.random() * total;
+  for (const p of PRIZES) {
+    r -= p.chance;
+    if (r <= 0) return p;
+  }
+  return PRIZES[PRIZES.length - 1];
+}
 // ======================================
 
 // ====== ХЕЛПЕРЫ ======
@@ -252,7 +263,7 @@ app.post('/api/spin', async (req, res) => {
   u.spins = Number(u.spins) - 1;
   await saveUser(u);
 
-  const prize = PRIZES[Math.floor(Math.random() * PRIZES.length)];
+  const prize = pickPrize();
   console.log('Взрыв: игрок ' + playerLine(u) + ' (' + u.telegram_id + ') -> ' + prize.name);
 
   const spinText =
