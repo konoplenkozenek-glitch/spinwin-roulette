@@ -323,6 +323,7 @@ app.get('/api/admin/data', async (req, res) => {
 
   const { data: users } = await supabase
     .from('users').select('*').order('donated', { ascending: false });
+  // показываем только НЕобработанные и НЕскрытые (0 = новые, 2 = скрытые)
   const { data: unrecognized } = await supabase
     .from('donations').select('*').eq('recognized', 0)
     .order('ts', { ascending: false }).limit(20);
@@ -418,17 +419,17 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
   res.json({ ok: true, spins });
 });
 
-// удалить один донат из админки
+// скрыть один донат из админки (запись остаётся в базе — донат больше не перепридёт)
 app.post('/api/admin/delete-donation', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  await supabase.from('donations').delete().eq('id', req.body.donationId);
+  await supabase.from('donations').update({ recognized: 2 }).eq('id', req.body.donationId);
   res.json({ ok: true });
 });
 
-// удалить все нераспознанные донаты разом
+// скрыть все нераспознанные разом (маркеры остаются — повторно не придут)
 app.post('/api/admin/clear-donations', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
-  await supabase.from('donations').delete().eq('recognized', 0);
+  await supabase.from('donations').update({ recognized: 2 }).eq('recognized', 0);
   res.json({ ok: true });
 });
 
@@ -601,7 +602,10 @@ async function pollDonations() {
           telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
         });
         console.log('DA: донат НЕ распознан (ник не найден или сумма < 100)');
-        notifyAdmin(`⚠️ Донат ${amount} ₽ не распознан. Сообщение: «${message || '—'}», username: ${username || '—'}. Зачисли вручную в админке.`);
+        // в личку админу — только донаты от 100 ₽, мелочь просто видна в админке
+        if (amount >= 100) {
+          notifyAdmin(`⚠️ Донат ${amount} ₽ не распознан. Сообщение: «${message || '—'}», username: ${username || '—'}. Зачисли вручную в админке.`);
+        }
       }
     }
   } catch (e) { /* повторим на следующем опросе */ }
@@ -699,7 +703,7 @@ async function load(){
     : 'Пока донатов не было';
 
   document.getElementById('unrecognized').innerHTML = j.unrecognized.length
-    ? '<div class="row" style="margin-bottom:8px"><button class="gray" onclick="clearAll()">🗑 Очистить все нераспознанные</button></div>' +
+    ? '<div class="row" style="margin-bottom:8px"><button class="gray" onclick="clearAll()">🗑 Скрыть все нераспознанные</button></div>' +
       '<table><tr><th>Сумма</th><th>Сообщение</th><th>Кому</th></tr>' +
       j.unrecognized.map(d => '<tr><td>' + d.amount + ' ₽</td><td>' + (d.message || '—') + '</td><td>' +
         '<input id="tg' + d.id + '" placeholder="telegram_id" style="width:110px">' +
@@ -756,14 +760,14 @@ async function resolve(id){
 async function delDonation(id){
   await fetch('/api/admin/delete-donation', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ key: KEY, donationId: id }) });
-  toast('Удалено 🗑');
+  toast('Скрыто 🗑');
   load();
 }
 async function clearAll(){
-  if (!confirm('Удалить ВСЕ нераспознанные донаты?')) return;
+  if (!confirm('Скрыть ВСЕ нераспознанные донаты? Они больше не будут показываться и напоминать о себе.')) return;
   await fetch('/api/admin/clear-donations', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ key: KEY }) });
-  toast('Очищено 🗑');
+  toast('Скрыто 🗑');
   load();
 }
 async function createPromo(){
