@@ -418,6 +418,20 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
   res.json({ ok: true, spins });
 });
 
+// удалить один донат из админки
+app.post('/api/admin/delete-donation', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  await supabase.from('donations').delete().eq('id', req.body.donationId);
+  res.json({ ok: true });
+});
+
+// удалить все нераспознанные донаты разом
+app.post('/api/admin/clear-donations', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  await supabase.from('donations').delete().eq('recognized', 0);
+  res.json({ ok: true });
+});
+
 app.post('/api/admin/broadcast', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const text = String(req.body.text || '').trim();
@@ -685,10 +699,12 @@ async function load(){
     : 'Пока донатов не было';
 
   document.getElementById('unrecognized').innerHTML = j.unrecognized.length
-    ? '<table><tr><th>Сумма</th><th>Сообщение</th><th>Кому</th></tr>' +
+    ? '<div class="row" style="margin-bottom:8px"><button class="gray" onclick="clearAll()">🗑 Очистить все нераспознанные</button></div>' +
+      '<table><tr><th>Сумма</th><th>Сообщение</th><th>Кому</th></tr>' +
       j.unrecognized.map(d => '<tr><td>' + d.amount + ' ₽</td><td>' + (d.message || '—') + '</td><td>' +
         '<input id="tg' + d.id + '" placeholder="telegram_id" style="width:110px">' +
-        ' <button onclick="resolve(' + d.id + ')">Зачислить</button></td></tr>').join('') + '</table>'
+        ' <button onclick="resolve(' + d.id + ')">Зачислить</button>' +
+        ' <button class="gray" onclick="delDonation(' + d.id + ')">✕</button></td></tr>').join('') + '</table>'
     : 'Нет нераспознанных донатов 👌';
 
   renderUsers();
@@ -735,6 +751,19 @@ async function resolve(id){
   const tg = document.getElementById('tg' + id).value;
   await fetch('/api/admin/resolve-donation', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ key: KEY, donationId: id, telegramId: tg }) });
+  load();
+}
+async function delDonation(id){
+  await fetch('/api/admin/delete-donation', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY, donationId: id }) });
+  toast('Удалено 🗑');
+  load();
+}
+async function clearAll(){
+  if (!confirm('Удалить ВСЕ нераспознанные донаты?')) return;
+  await fetch('/api/admin/clear-donations', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY }) });
+  toast('Очищено 🗑');
   load();
 }
 async function createPromo(){
