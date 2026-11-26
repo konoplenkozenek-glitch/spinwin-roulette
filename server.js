@@ -29,16 +29,53 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== НАСТРОЙКИ ======
-const PROGRESS_GOAL = 10000;
-const GOAL_BONUS_SPINS = 5;
-const DAILY_PROMO_HOUR = 12; // час (по Москве), когда в группу уходит промокод дня
 const DA_CUTOFF_HOURS = 24;  // обрабатывать только донаты за последние N часов
+const DAILY_PROMO_HOUR = 12; // час (по Москве) для промокода дня
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
   { amount: 300,  spins: 4 },
   { amount: 1000, spins: 13 }
 ];
+
+// ====== СИСТЕМА ТИТУЛОВ ======
+// При достижении порога игрок получает титул и бонус взрывов (один раз на титул).
+// Шкала в админке показывает прогресс до СЛЕДУЮЩЕГО титула.
+const TIERS = [
+  { name: 'Новичок',  from: 0,      bonus: 0  },
+  { name: 'Бронза',   from: 10000,  bonus: 5  },
+  { name: 'Серебро',  from: 25000,  bonus: 10 },
+  { name: 'Золото',   from: 50000,  bonus: 20 },
+  { name: 'Легенда',  from: 100000, bonus: 50 }
+];
+
+function tierIndexFor(donated) {
+  let idx = 0;
+  for (let i = 0; i < TIERS.length; i++) {
+    if (donated >= TIERS[i].from) idx = i;
+  }
+  return idx;
+}
+
+// начисление титула и бонуса при переходе на новый уровень
+async function grantTier(u) {
+  const d = Number(u.donated) || 0;
+  const newTier = tierIndexFor(d);
+  const oldTier = Number(u.tier) || 0;
+  if (newTier <= oldTier) return false;
+
+  const t = TIERS[newTier];
+  u.tier = newTier;
+  u.spins = Number(u.spins) + t.bonus;
+  await saveUser(u);
+
+  const text = '🏅 Новый титул: ' + t.name + '! Тебе начислено +' + t.bonus + ' взрывов в подарок! 💣';
+  const sentToPlayer = await notifyUser(u, text);
+  if (!sentToPlayer || !isAdminUser(u)) {
+    notifyAdmin('🏅 ' + playerLine(u) + ' получил титул ' + t.name + ' (' + d.toLocaleString('ru-RU') + ' ₽) — бонус +' + t.bonus + ' взрывов!');
+  }
+  return true;
+}
 
 // ====== СПИСОК НАГРАД (выпадает при взрыве) ======
 const PRIZES = [
@@ -115,6 +152,7 @@ async function ensureUser(tgUser, chatId) {
       game_nick: null,
       spins: 0,
       donated: 0,
+      tier: 0,
       goal_bonus: 0,
       created_at: Date.now()
     };
@@ -134,6 +172,7 @@ async function saveUser(u) {
     donated: u.donated,
     game_nick: u.game_nick,
     username: u.username,
+    tier: u.tier || 0,
     goal_bonus: u.goal_bonus || 0
   }).eq('telegram_id', String(u.telegram_id));
   if (error) console.log('SUPABASE: ошибка сохранения игрока ' + u.telegram_id + ' -> ' + error.message);
@@ -165,21 +204,6 @@ function isAdminUser(u) {
   if (!ADMIN_CHAT_ID) return false;
   return String(u.chat_id || '') === String(ADMIN_CHAT_ID) ||
          String(u.telegram_id || '') === String(ADMIN_CHAT_ID);
-}
-
-async function grantGoalBonus(u) {
-  if (Number(u.donated) >= PROGRESS_GOAL && !u.goal_bonus) {
-    u.goal_bonus = 1;
-    u.spins = Number(u.spins) + GOAL_BONUS_SPINS;
-    await saveUser(u);
-    const text = '🎉 Цель ' + PROGRESS_GOAL.toLocaleString('ru-RU') + ' ₽ достигнута! Тебе начислено +' + GOAL_BONUS_SPINS + ' взрывов в подарок! 💣';
-    const sentToPlayer = await notifyUser(u, text);
-    if (!sentToPlayer || !isAdminUser(u)) {
-      notifyAdmin('🎉 ' + playerLine(u) + ' закрыл цель ' + PROGRESS_GOAL.toLocaleString('ru-RU') + ' ₽ — бонус +' + GOAL_BONUS_SPINS + ' взрывов!');
-    }
-    return true;
-  }
-  return false;
 }
 
 // отправка в любой чат с логированием ошибок
@@ -255,6 +279,7 @@ app.post('/api/me', async (req, res) => {
     spins: Number(u.spins),
     donated: Number(u.donated),
     gameNick: u.game_nick,
+    tier: TIERS[Number(u.tier) || 0] ? TIERS[Number(u.tier) || 0].name : 'Новичок',
     rank: (above || 0) + 1,
     totalPlayers: total || 0,
     hasChat: Boolean(u.chat_id)
@@ -364,7 +389,9 @@ app.get('/api/admin/data', async (req, res) => {
     ok: true,
     users: (users || []).map(u => ({
       telegram_id: u.telegram_id, username: u.username, game_nick: u.game_nick,
-      spins: u.spins, donated: u.donated, goal_bonus: u.goal_bonus,
+      spins: u.spins, donated: u.donated,
+      tier: Number(u.tier) || 0, tierName: TIERS[Number(u.tier) || 0] ? TIERS[Number(u.tier) || 0].name : 'Новичок',
+      goal_bonus: u.goal_bonus,
       chat_id: u.chat_id, hasChat: Boolean(u.chat_id)
     })),
     unrecognized: unrecognized || [],
@@ -386,6 +413,8 @@ app.post('/api/admin/update-user', async (req, res) => {
   if (req.body.donated !== undefined && req.body.donated !== '') u.donated = parseInt(req.body.donated, 10) || 0;
   if (req.body.gameNick) u.game_nick = String(req.body.gameNick).slice(0, 40);
   await saveUser(u);
+  // при ручной правке суммы тоже проверяем титул
+  await grantTier(u);
   res.json({ ok: true });
 });
 
@@ -435,8 +464,8 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
   const spins = spinsForAmount(Number(d.amount));
   u.spins = Number(u.spins) + spins;
   u.donated = Number(u.donated) + Number(d.amount);
-  await grantGoalBonus(u);
   await saveUser(u);
+  await grantTier(u);
 
   await supabase.from('donations')
     .update({ recognized: 1, telegram_id: String(u.telegram_id), spins_added: spins })
@@ -603,11 +632,11 @@ async function pollDonations() {
         const spins = spinsForAmount(amount);
         user.spins = Number(user.spins) + spins;
         user.donated = Number(user.donated) + amount;
-        await grantGoalBonus(user);
         const saved = await saveUser(user);
         if (!saved) {
           console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id));
         }
+        await grantTier(user);
 
         const { error: insErr } = await supabase.from('donations').insert({
           da_id: String(d.id), amount: amount, message: message, username: username,
@@ -656,30 +685,32 @@ body{font-family:sans-serif;background:#111;color:#eee;padding:16px;max-width:96
 h1{color:#FFD700;font-size:20px}
 h2{color:#FFD700;font-size:15px;margin-top:18px}
 table{width:100%;border-collapse:collapse;font-size:13px}
-td,th{border:1px solid #333;padding:5px 7px;text-align:left}
+td,th{border:1px solid #333;padding:4px 7px;text-align:left}
 th{background:#222;color:#FFD700}
-button{background:#FFD700;border:none;padding:6px 10px;border-radius:8px;font-weight:bold;cursor:pointer}
+button{background:#FFD700;border:none;padding:5px 9px;border-radius:8px;font-weight:bold;cursor:pointer}
 button.gray{background:#555;color:#fff}
-input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius:6px;padding:6px}
+input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius:6px;padding:5px}
 .muted{color:#888;font-size:12px}
 .stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-.stat{background:#1a1a1a;border:1px solid rgba(255,215,0,.35);border-radius:10px;padding:8px 14px;min-width:120px}
-.stat .num{color:#FFD700;font-size:18px;font-weight:bold}
+.stat{background:#1a1a1a;border:1px solid rgba(255,215,0,.35);border-radius:10px;padding:7px 13px;min-width:110px}
+.stat .num{color:#FFD700;font-size:17px;font-weight:bold}
 .stat .lbl{color:#888;font-size:11px}
-.progress-wrap{margin:14px 0 4px}
+.progress-wrap{margin:12px 0 4px}
 .progress-bar{height:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.4);border-radius:10px;overflow:hidden}
 .progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);box-shadow:0 0 10px rgba(255,215,0,.5);transition:width .6s ease}
-.progress-fill.done{background:linear-gradient(90deg,#3ddc84,#aef7cf)}
 .progress-label{font-size:12px;color:#b8a878;margin-top:5px}
-.progress-label.done{color:#3ddc84;font-weight:bold}
 .mini-wrap{display:flex;align-items:center;gap:6px}
-.mini-bar{height:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.35);border-radius:6px;overflow:hidden;width:120px;flex-shrink:0}
+.mini-bar{height:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.35);border-radius:6px;overflow:hidden;width:110px;flex-shrink:0}
 .mini-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);transition:width .4s ease}
-.mini-fill.done{background:linear-gradient(90deg,#3ddc84,#aef7cf)}
 .mini-num{font-size:11px;color:#b8a878;white-space:nowrap}
-.prize-badge{display:inline-block;padding:2px 8px;border-radius:8px;color:#111;font-weight:bold;font-size:12px}
+.tier-badge{display:inline-block;padding:2px 7px;border-radius:8px;font-size:11px;font-weight:bold;color:#111;white-space:nowrap}
+.prize-badge{display:inline-block;padding:2px 7px;border-radius:8px;color:#111;font-weight:bold;font-size:11px}
 .jackpot{animation:glow 1.5s ease-in-out infinite alternate}
 @keyframes glow{from{box-shadow:0 0 4px #ffd54f}to{box-shadow:0 0 14px #ffd54f}}
+.scroll-box{max-height:240px;overflow-y:auto;border:1px solid #333;border-radius:8px}
+.win-row{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid #2a2a2a;font-size:12px}
+.win-row .when{color:#888;min-width:118px;flex-shrink:0}
+.win-row .who{min-width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#FFD700;color:#000;padding:8px 16px;border-radius:10px;font-weight:bold;display:none;z-index:9}
 </style></head><body>
@@ -698,7 +729,8 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 </div>
 
 <h2>💵 Последний донат</h2><div id="lastDonation">—</div>
-<h2>🏆 Выигрыши</h2><div id="wins">—</div>
+<h2>🏆 Выигрыши <span class="muted">(лента, свежие сверху)</span></h2>
+<div id="wins" class="scroll-box">—</div>
 <h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
 <h2>👥 Игроки</h2>
 <div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
@@ -719,7 +751,13 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 <div id="toast"></div>
 <script>
 const KEY = new URLSearchParams(location.search).get('key');
-const GOAL = 10000;
+const TIERS = [
+  { name: 'Новичок', from: 0 },
+  { name: 'Бронза',  from: 10000 },
+  { name: 'Серебро', from: 25000 },
+  { name: 'Золото',  from: 50000 },
+  { name: 'Легенда', from: 100000 }
+];
 let USERS = [];
 function fmt(n){return Number(n).toLocaleString('ru-RU')}
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(function(){el.style.display='none'},2500)}
@@ -731,6 +769,10 @@ function timeStr(ts){
 function prizeColorJs(name){
   const MAP = {'Любая наживка 5 шт':'#ffcf40','Приманки на выбор':'#4caf50','1 бутылка алкоголя':'#ef4444','Кофе 500':'#d2a24c','Кофе 1000':'#b78cff','Золотая монета 1 шт':'#ffa726','Премиум 3 дня':'#4db8ff','Майка 10 шт':'#ff6ec7','Нос 10 шт':'#9e9e9e','Бокоплав 10 шт':'#7ec84a','Медведка 10 шт':'#7ec84a','Дрейсена 10 шт':'#4db8ff','Перловица 10 шт':'#b78cff','Сбитень 10 шт':'#ff7043','Золотая монетка 2 шт':'#ffd54f','Премиум 7 дней':'#4db8ff','Премиум 30 дней':'#4caf50','Venga II 10k':'#ffd54f'};
   return MAP[name] || '#FFD700';
+}
+function tierColor(idx){
+  const C = ['#9e9e9e','#cd7f32','#c0c0c0','#ffd54f','#ff8c00'];
+  return C[idx] || '#9e9e9e';
 }
 
 async function load(){
@@ -746,17 +788,9 @@ async function load(){
 
   const fill = document.getElementById('progFill');
   const label = document.getElementById('progLabel');
-  const pct = Math.min(Math.round(j.totalDonated / GOAL * 100), 100);
+  const pct = Math.min(Math.round(j.totalDonated / 10000 * 100), 100);
   fill.style.width = pct + '%';
-  if (j.totalDonated >= GOAL) {
-    fill.classList.add('done');
-    label.textContent = '🎉 Цель ' + fmt(GOAL) + ' ₽ собрана!';
-    label.classList.add('done');
-  } else {
-    fill.classList.remove('done');
-    label.classList.remove('done');
-    label.textContent = 'Поступления: ' + fmt(j.totalDonated) + ' из ' + fmt(GOAL) + ' ₽ (' + pct + '%)';
-  }
+  label.textContent = 'Общий сбор: ' + fmt(j.totalDonated) + ' ₽ — цель 10 000 ₽ собрана на ' + pct + '%';
 
   const ld = j.lastDonation;
   document.getElementById('lastDonation').innerHTML = ld
@@ -764,12 +798,12 @@ async function load(){
     : 'Пока донатов не было';
 
   document.getElementById('wins').innerHTML = j.wins.length
-    ? '<table><tr><th>Когда</th><th>Игрок</th><th>Ник в игре</th><th>Выигрыш</th></tr>' +
-      j.wins.map(w => {
+    ? j.wins.map(w => {
         const isJackpot = w.prize === 'Venga II 10k';
-        return '<tr><td>' + timeStr(w.ts) + '</td><td>@' + (w.username || w.telegram_id) + '</td><td>' + (w.game_nick || '—') + '</td>' +
-          '<td><span class="prize-badge' + (isJackpot ? ' jackpot' : '') + '" style="background:' + prizeColorJs(w.prize) + '">' + w.prize + '</span></td></tr>';
-      }).join('') + '</table>'
+        return '<div class="win-row"><span class="when">' + timeStr(w.ts) + '</span>' +
+          '<span class="who">@' + (w.username || w.telegram_id) + (w.game_nick ? ' · ' + w.game_nick : '') + '</span>' +
+          '<span class="prize-badge' + (isJackpot ? ' jackpot' : '') + '" style="background:' + prizeColorJs(w.prize) + '">' + w.prize + '</span></div>';
+      }).join('')
     : 'Выигрышей пока не было';
 
   document.getElementById('unrecognized').innerHTML = j.unrecognized.length
@@ -797,18 +831,28 @@ function renderUsers(){
     (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
     String(u.telegram_id).indexOf(q) >= 0);
   document.getElementById('users').innerHTML = list.length
-    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Прогресс</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
+    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Титул</th><th>Прогресс до след. титула</th><th>Взрывы</th><th>Донат</th><th>Корректировка</th></tr>' +
       list.map(u => {
         const d = Number(u.donated) || 0;
-        const p = Math.min(Math.round(d / GOAL * 100), 100);
-        const done = d >= GOAL;
+        const tIdx = Number(u.tier) || 0;
+        const cur = TIERS[tIdx] || TIERS[0];
+        const next = TIERS[tIdx + 1] || null;
+        let p;
+        let lbl;
+        if (!next) { p = 100; lbl = 'MAX'; }
+        else {
+          const span = next.from - cur.from;
+          p = Math.min(Math.round((d - cur.from) / span * 100), 100);
+          lbl = p + '% · до ' + next.name + ' ' + fmt(Math.max(next.from - d, 0)) + ' ₽';
+        }
         return '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
           '</td><td>' + (u.hasChat ? '🔔' : '🔕') + '</td>' +
-          '<td><div class="mini-wrap"><div class="mini-bar"><div class="mini-fill' + (done ? ' done' : '') + '" style="width:' + p + '%"></div></div>' +
-          '<span class="mini-num">' + (done ? '🎉 100%' : p + '%') + '</span></div></td>' +
-          '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
+          '<td><span class="tier-badge" style="background:' + tierColor(tIdx) + '">' + (u.tierName || cur.name) + '</span></td>' +
+          '<td><div class="mini-wrap"><div class="mini-bar"><div class="mini-fill" style="width:' + p + '%"></div></div>' +
+          '<span class="mini-num">' + lbl + '</span></div></td>' +
+          '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:55px"></td>' +
           '<td><input id="dn' + u.telegram_id + '" type="number" value="' + u.donated + '" style="width:70px"></td>' +
-          '<td>' + (u.goal_bonus ? '✅' : '—') + '</td><td>' +
+          '<td>' +
           '<button onclick="saveUser(\\'' + u.telegram_id + '\\')">Сохранить</button> ' +
           '<button onclick="addSpins(\\'' + u.telegram_id + '\\')">+1</button></td></tr>';
       }).join('') + '</table>'
