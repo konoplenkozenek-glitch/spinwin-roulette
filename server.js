@@ -28,6 +28,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ВАЖНО: если в Supabase на таблицах users/donations/promos включён RLS,
+// UPDATE может молча не срабатывать. В SQL Editor выполни один раз:
+//   alter table public.users disable row level security;
+//   alter table public.donations disable row level security;
+//   alter table public.promos disable row level security;
+
 // ====== НАСТРОЙКИ ======
 const PROGRESS_GOAL = 10000;
 const GOAL_BONUS_SPINS = 5;
@@ -122,7 +128,7 @@ async function ensureUser(tgUser, chatId) {
   return u;
 }
 
-// сохранение игрока с проверкой ошибки (раньше ошибка глоталась молча)
+// сохранение игрока с проверкой ошибки (RLS-блокировка теперь будет видна в логах)
 async function saveUser(u) {
   const { error } = await supabase.from('users').update({
     spins: u.spins,
@@ -589,14 +595,15 @@ async function pollDonations() {
         await grantGoalBonus(user);
         const saved = await saveUser(user);
         if (!saved) {
-          console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id));
+          console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id) + ' — проверь RLS в Supabase');
         }
 
-        await supabase.from('donations').insert({
+        const { error: insErr } = await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
           telegram_id: String(user.telegram_id),
           spins_added: spins, recognized: 1, ts: Date.now()
         });
+        if (insErr) console.log('SUPABASE: не записал донат -> ' + insErr.message);
         console.log('DA: зачислено ' + spins + ' взрывов игроку ' + (user.username || user.telegram_id));
 
         const donText =
@@ -612,10 +619,11 @@ async function pollDonations() {
           notifyAdmin(donText);
         }
       } else {
-        await supabase.from('donations').insert({
+        const { error: insErr2 } = await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
           telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
         });
+        if (insErr2) console.log('SUPABASE: не записал донат -> ' + insErr2.message);
         console.log('DA: донат НЕ распознан (ник не найден или сумма < 100)');
         // в личку админу — только донаты от 100 ₽, мелочь просто видна в админке
         if (amount >= 100) {
@@ -742,7 +750,7 @@ function renderUsers(){
     (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
     String(u.telegram_id).indexOf(q) >= 0);
   document.getElementById('users').innerHTML = list.length
-    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Взрывы</th><th>Донат</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
+    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Взрывы</th><th>Донat</th><th>Бонус 10к</th><th>Корректировка</th></tr>' +
       list.map(u => '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
       '</td><td>' + (u.hasChat ? '🔔' : '🔕') + '</td>' +
       '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:60px"></td>' +
