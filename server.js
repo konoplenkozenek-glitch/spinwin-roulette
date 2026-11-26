@@ -8,7 +8,6 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(express.json());
 
-// папка public может лежать рядом с server.js или на уровень выше
 const PUB = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public')
   : path.join(__dirname, '..', 'public');
@@ -19,9 +18,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DA_ACCESS_TOKEN = process.env.DA_ACCESS_TOKEN || '';
 
-// Чат АДМИНА (твоя личка с ботом): выигрыши, донаты, алерты
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '';
-// Группа: ТОЛЬКО промокод дня раз в сутки
 const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || '';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -29,8 +26,8 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== НАСТРОЙКИ ======
-const DA_CUTOFF_HOURS = 24;  // обрабатывать только донаты за последние N часов
-const DAILY_PROMO_HOUR = 12; // час (по Москве) для промокода дня
+const DA_CUTOFF_HOURS = 24;
+const DAILY_PROMO_HOUR = 12;
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
@@ -39,8 +36,6 @@ const PACKAGES = [
 ];
 
 // ====== СИСТЕМА ТИТУЛОВ ======
-// При достижении порога игрок получает титул и бонус взрывов (один раз на титул).
-// Шкала в админке показывает прогресс до СЛЕДУЮЩЕГО титула.
 const TIERS = [
   { name: 'Новичок',  from: 0,      bonus: 0  },
   { name: 'Бронза',   from: 10000,  bonus: 5  },
@@ -57,7 +52,6 @@ function tierIndexFor(donated) {
   return idx;
 }
 
-// начисление титула и бонуса при переходе на новый уровень
 async function grantTier(u) {
   const d = Number(u.donated) || 0;
   const newTier = tierIndexFor(d);
@@ -77,7 +71,7 @@ async function grantTier(u) {
   return true;
 }
 
-// ====== СПИСОК НАГРАД (выпадает при взрыве) ======
+// ====== СПИСОК НАГРАД ======
 const PRIZES = [
   { name: 'Любая наживка 5 шт',   color: '#ffcf40', chance: 6.65 },
   { name: 'Приманки на выбор',    color: '#4caf50', chance: 6.65 },
@@ -104,7 +98,6 @@ function prizeColor(name) {
   return p ? p.color : '#FFD700';
 }
 
-// выбор приза по шансам (в процентах)
 function pickPrize() {
   const total = PRIZES.reduce((s, p) => s + p.chance, 0);
   let r = Math.random() * total;
@@ -114,7 +107,6 @@ function pickPrize() {
   }
   return PRIZES[PRIZES.length - 1];
 }
-// ======================================
 
 // ====== ХЕЛПЕРЫ ======
 function verifyInitData(initData) {
@@ -165,7 +157,6 @@ async function ensureUser(tgUser, chatId) {
   return u;
 }
 
-// сохранение игрока с проверкой ошибки
 async function saveUser(u) {
   const { error } = await supabase.from('users').update({
     spins: u.spins,
@@ -193,20 +184,17 @@ function spinsForAmount(amount) {
   return total;
 }
 
-// строка игрока в формате: @ник (игровой ник: …)
 function playerLine(u) {
   return '@' + (u.username || u.telegram_id) +
     (u.game_nick ? ' (игровой ник: ' + u.game_nick + ')' : '');
 }
 
-// это сам админ? (защита от дублей уведомлений в его чат)
 function isAdminUser(u) {
   if (!ADMIN_CHAT_ID) return false;
   return String(u.chat_id || '') === String(ADMIN_CHAT_ID) ||
          String(u.telegram_id || '') === String(ADMIN_CHAT_ID);
 }
 
-// отправка в любой чат с логированием ошибок
 async function sendTelegramMessage(chatId, text) {
   if (!BOT_TOKEN || !chatId) {
     if (!chatId) console.log('TG: не задан chat_id, сообщение не отправлено: ' + text.slice(0, 40));
@@ -229,7 +217,6 @@ async function sendTelegramMessage(chatId, text) {
   }
 }
 
-// админу (в личку от бота)
 async function notifyAdmin(text) {
   if (!ADMIN_CHAT_ID) {
     console.log('TG: ADMIN_CHAT_ID не задан — уведомление админу не отправлено: ' + text.slice(0, 60));
@@ -238,7 +225,6 @@ async function notifyAdmin(text) {
   return sendTelegramMessage(ADMIN_CHAT_ID, text);
 }
 
-// игроку в личку (chat_id или фолбэк telegram_id)
 async function notifyUser(u, text) {
   const target = u.chat_id || u.telegram_id;
   const ok = await sendTelegramMessage(target, text);
@@ -301,7 +287,6 @@ app.post('/api/spin', async (req, res) => {
   const prize = pickPrize();
   console.log('Взрыв: игрок ' + playerLine(u) + ' (' + u.telegram_id + ') -> ' + prize.name);
 
-  // история выигрышей для админки
   const { error: winErr } = await supabase.from('wins').insert({
     telegram_id: String(u.telegram_id),
     username: u.username || '',
@@ -316,9 +301,7 @@ app.post('/api/spin', async (req, res) => {
     'Выпало: «' + prize.name + '»\n' +
     'Круток осталось: ' + u.spins;
 
-  // игроку в личку
   const sentToPlayer = await notifyUser(u, spinText);
-  // админу — только если это НЕ сам админ (иначе дубль в его чате)
   if (!sentToPlayer || !isAdminUser(u)) {
     notifyAdmin(spinText);
   }
@@ -338,9 +321,17 @@ app.post('/api/redeem-promo', async (req, res) => {
   if (!promo) return res.json({ ok: false, error: 'not_found' });
   if (promo.used_by) return res.json({ ok: false, error: 'used' });
 
+  // --- Сохраняем ник пользователя и игровой ник при активации ---
   await supabase.from('promos')
-    .update({ used_by: String(u.telegram_id), used_at: Date.now() })
+    .update({ 
+      used_by: String(u.telegram_id), 
+      used_username: u.username || u.telegram_id,
+      used_game_nick: u.game_nick || null,
+      used_at: Date.now() 
+    })
     .eq('code', code);
+  // -------------------------------------------------------------
+
   u.spins = Number(u.spins) + (promo.spins || 1);
   await saveUser(u);
 
@@ -368,18 +359,15 @@ app.get('/api/admin/data', async (req, res) => {
 
   const { data: users } = await supabase
     .from('users').select('*').order('donated', { ascending: false });
-  // показываем только НЕобработанные и НЕскрытые (0 = новые, 2 = скрытые)
   const { data: unrecognized } = await supabase
     .from('donations').select('*').eq('recognized', 0)
     .order('ts', { ascending: false }).limit(20);
   const { data: lastDonation } = await supabase
     .from('donations').select('*').order('ts', { ascending: false }).limit(1);
-  // история выигрышей: свежие сверху
   const { data: wins } = await supabase
     .from('wins').select('*').order('ts', { ascending: false }).limit(50);
   let { data: promos } = await supabase
     .from('promos').select('*').order('code', { ascending: true }).limit(50);
-  // технические маркеры промокода дня не показываем
   promos = (promos || []).filter(p => !String(p.code).startsWith('DAY-'));
 
   const totalDonated = (users || []).reduce((s, u) => s + Number(u.donated || 0), 0);
@@ -413,7 +401,6 @@ app.post('/api/admin/update-user', async (req, res) => {
   if (req.body.donated !== undefined && req.body.donated !== '') u.donated = parseInt(req.body.donated, 10) || 0;
   if (req.body.gameNick) u.game_nick = String(req.body.gameNick).slice(0, 40);
   await saveUser(u);
-  // при ручной правке суммы тоже проверяем титул
   await grantTier(u);
   res.json({ ok: true });
 });
@@ -441,7 +428,7 @@ app.post('/api/admin/create-promo', async (req, res) => {
   if (!code) return res.json({ ok: false });
   const spins = parseInt(req.body.spins, 10) || 1;
   const { error } = await supabase.from('promos').insert({ code: code, spins: spins });
-  res.json({ ok: !error, error: error ? 'exists' : undefined });
+  res.json({ ok: !error, error: error ? 'exists' : undefined, code: code });
 });
 
 app.post('/api/admin/delete-promo', async (req, res) => {
@@ -451,7 +438,6 @@ app.post('/api/admin/delete-promo', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ручная очистка истории выигрышей
 app.post('/api/admin/clear-wins', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const { error } = await supabase.from('wins').delete().neq('id', 0);
@@ -483,14 +469,12 @@ app.post('/api/admin/resolve-donation', async (req, res) => {
   res.json({ ok: true, spins: spins });
 });
 
-// скрыть один донат из админки (запись остаётся в базе — донат больше не перепридёт)
 app.post('/api/admin/delete-donation', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   await supabase.from('donations').update({ recognized: 2 }).eq('id', req.body.donationId);
   res.json({ ok: true });
 });
 
-// скрыть все нераспознанные разом (маркеры остаются — повторно не придут)
 app.post('/api/admin/clear-donations', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   await supabase.from('donations').update({ recognized: 2 }).eq('recognized', 0);
@@ -513,8 +497,6 @@ app.post('/api/admin/broadcast', async (req, res) => {
   res.json({ ok: true, sent: sent });
 });
 
-// тест: проверка личных уведомлений админу
-// https://твой-адрес.onrender.com/api/test-admin?key=ТВОЙ_ADMIN_KEY
 app.get('/api/test-admin', (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   notifyAdmin('🧪 Тест личных уведомлений — если видишь это, всё настроено!');
@@ -544,7 +526,6 @@ async function pollBotUpdates() {
       if (msg.chat.type === 'private' && msg.from) {
         console.log('TG: личное сообщение от "' + (msg.from.username || msg.from.first_name || '?') +
           '", chat_id = ' + msg.chat.id + ' (если это ты — вставь это число в ADMIN_CHAT_ID)');
-        // создаём игрока, если его ещё нет, и в любом случае сохраняем chat_id
         await ensureUser(msg.from, String(msg.chat.id));
       }
     }
@@ -553,16 +534,15 @@ async function pollBotUpdates() {
 setInterval(pollBotUpdates, 15000);
 pollBotUpdates();
 
-// ====== ПРОМОКОД ДНЯ (раз в сутки в группу) ======
+// ====== ПРОМОКОД ДНЯ ======
 async function maybePostDailyPromo() {
   if (!GROUP_CHAT_ID) return;
   try {
-    const now = new Date(Date.now() + 3 * 3600 * 1000); // московское время (UTC+3)
+    const now = new Date(Date.now() + 3 * 3600 * 1000);
     const dateStr = now.toISOString().slice(0, 10);
     const hour = now.getUTCHours();
     if (hour < DAILY_PROMO_HOUR) return;
 
-    // маркер на дату — защита от повтора
     const markerCode = 'DAY-' + dateStr;
     const { data: marker } = await supabase
       .from('promos').select('code').eq('code', markerCode).maybeSingle();
@@ -596,7 +576,7 @@ async function pollDonations() {
     const j1 = await r1.json();
     const batches = [j1.data || []];
     if (j1.meta && j1.meta.last_page > 1) {
-      await new Promise(res => setTimeout(res, 1100)); // лимит DA: 1 запрос в секунду
+      await new Promise(res => setTimeout(res, 1100));
       const r2 = await fetch('https://www.donationalerts.com/api/v1/alerts/donations?page=' + j1.meta.last_page, {
         headers: { Authorization: 'Bearer ' + DA_ACCESS_TOKEN }
       });
@@ -608,7 +588,6 @@ async function pollDonations() {
     const list = batches.flat();
 
     for (const d of list) {
-      // игнорируем старые донаты — обрабатываем только свежие
       if (d.created_at) {
         const created = new Date(d.created_at).getTime();
         if (created && created < Date.now() - DA_CUTOFF_HOURS * 3600 * 1000) continue;
@@ -697,257 +676,4 @@ td,th{border:1px solid #333;padding:4px 7px;text-align:left}
 th{background:#222;color:#FFD700}
 button{background:#FFD700;border:none;padding:5px 9px;border-radius:8px;font-weight:bold;cursor:pointer}
 button.gray{background:#555;color:#fff}
-input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius:6px;padding:5px}
-.muted{color:#888;font-size:12px}
-.stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-.stat{background:#1a1a1a;border:1px solid rgba(255,215,0,.35);border-radius:10px;padding:7px 13px;min-width:110px}
-.stat .num{color:#FFD700;font-size:17px;font-weight:bold}
-.stat .lbl{color:#888;font-size:11px}
-.progress-wrap{margin:12px 0 4px}
-.progress-bar{height:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.4);border-radius:10px;overflow:hidden}
-.progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);box-shadow:0 0 10px rgba(255,215,0,.5);transition:width .6s ease}
-.progress-label{font-size:12px;color:#b8a878;margin-top:5px}
-.mini-wrap{display:flex;align-items:center;gap:6px}
-.mini-bar{height:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,215,0,.35);border-radius:6px;overflow:hidden;width:110px;flex-shrink:0}
-.mini-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);transition:width .4s ease}
-.mini-num{font-size:11px;color:#b8a878;white-space:nowrap}
-.tier-badge{display:inline-block;padding:2px 7px;border-radius:8px;font-size:11px;font-weight:bold;color:#111;white-space:nowrap}
-.prize-badge{display:inline-block;padding:3px 12px;border-radius:9px;color:#111;font-weight:bold;font-size:12px;white-space:nowrap}
-.jackpot{animation:glow 1.5s ease-in-out infinite alternate}
-@keyframes glow{from{box-shadow:0 0 4px #ffd54f}to{box-shadow:0 0 14px #ffd54f}}
-.scroll-box{max-height:200px;overflow-y:auto;border:1px solid #333;border-radius:8px;max-width:460px}
-.win-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #2a2a2a;font-size:11px}
-.win-row .when{color:#888;min-width:74px;flex-shrink:0;font-size:10px}
-.win-row .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#FFD700;color:#000;padding:8px 16px;border-radius:10px;font-weight:bold;display:none;z-index:9}
-</style></head><body>
-<h1>🛠 Админка — Золотая Удача</h1>
-
-<div class="stats">
-  <div class="stat"><div class="num" id="stDonated">0 ₽</div><div class="lbl">всего задонатили</div></div>
-  <div class="stat"><div class="num" id="stPlayers">0</div><div class="lbl">игроков</div></div>
-  <div class="stat"><div class="num" id="stSpins">0</div><div class="lbl">взрывов у игроков</div></div>
-  <div class="stat"><div class="num" id="stWins">0</div><div class="lbl">выигрышей (последние 50)</div></div>
-</div>
-
-<div class="progress-wrap">
-  <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
-  <div class="progress-label" id="progLabel"></div>
-</div>
-
-<h2>💵 Последний донат</h2><div id="lastDonation">—</div>
-<h2>🏆 Выигрыши <span class="muted">(лента, свежие сверху)</span></h2>
-<div id="wins" class="scroll-box">—</div>
-<h2>⚠️ Нераспознанные донаты</h2><div id="unrecognized">—</div>
-<h2>👥 Игроки</h2>
-<div class="row"><input id="searchQ" placeholder="🔍 поиск по нику" style="width:200px"></div><br>
-<div id="users">—</div>
-<h2>🎟 Промокоды</h2>
-<div class="row">
-  <input id="promoCode" placeholder="КОД (или сгенерируй)" style="width:180px">
-  <input id="promoSpins" placeholder="взрывов" type="number" value="1" style="width:70px">
-  <button onclick="createPromo()">Создать</button>
-  <button onclick="generatePromo()">🎲 Сгенерировать</button>
-</div><br>
-<div id="promos">—</div>
-<h2>📣 Рассылка</h2>
-<div class="row" style="flex-direction:column;align-items:stretch;max-width:600px">
-  <textarea id="bcText" rows="3" placeholder="Текст сообщения всем игрокам"></textarea>
-  <div><button onclick="broadcast()">Отправить всем</button> <span class="muted" id="bcResult"></span></div>
-</div>
-<div id="toast"></div>
-<script>
-const KEY = new URLSearchParams(location.search).get('key');
-const TIERS = [
-  { name: 'Новичок', from: 0 },
-  { name: 'Бронза',  from: 10000 },
-  { name: 'Серебро', from: 25000 },
-  { name: 'Золото',  from: 50000 },
-  { name: 'Легенда', from: 100000 }
-];
-let USERS = [];
-function fmt(n){return Number(n).toLocaleString('ru-RU')}
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(function(){el.style.display='none'},2500)}
-function timeStr(ts){
-  if(!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
-}
-function prizeColorJs(name){
-  const MAP = {'Любая наживка 5 шт':'#ffcf40','Приманки на выбор':'#4caf50','1 бутылка алкоголя':'#ef4444','Кофе 500':'#d2a24c','Кофе 1000':'#b78cff','Золотая монета 1 шт':'#ffa726','Премиум 3 дня':'#4db8ff','Майка 10 шт':'#ff6ec7','Нос 10 шт':'#9e9e9e','Бокоплав 10 шт':'#7ec84a','Медведка 10 шт':'#7ec84a','Дрейсена 10 шт':'#4db8ff','Перловица 10 шт':'#b78cff','Сбитень 10 шт':'#ff7043','Золотая монетка 2 шт':'#ffd54f','Премиум 7 дней':'#4db8ff','Премиум 30 дней':'#4caf50','Venga II 10k':'#ffd54f'};
-  return MAP[name] || '#FFD700';
-}
-function tierColor(idx){
-  const C = ['#9e9e9e','#cd7f32','#c0c0c0','#ffd54f','#ff8c00'];
-  return C[idx] || '#9e9e9e';
-}
-
-async function load(){
-  const r = await fetch('/api/admin/data?key=' + KEY);
-  const j = await r.json();
-  if(!j.ok){ document.body.innerHTML = 'Ошибка ключа'; return; }
-  USERS = j.users;
-
-  document.getElementById('stDonated').textContent = fmt(j.totalDonated) + ' ₽';
-  document.getElementById('stPlayers').textContent = j.users.length;
-  document.getElementById('stSpins').textContent = fmt(j.totalSpins);
-  document.getElementById('stWins').textContent = j.wins.length;
-
-  const fill = document.getElementById('progFill');
-  const label = document.getElementById('progLabel');
-  const pct = Math.min(Math.round(j.totalDonated / 10000 * 100), 100);
-  fill.style.width = pct + '%';
-  label.textContent = 'Общий сбор: ' + fmt(j.totalDonated) + ' ₽ — цель 10 000 ₽ собрана на ' + pct + '%';
-
-  const ld = j.lastDonation;
-  document.getElementById('lastDonation').innerHTML = ld
-    ? '<div class="stat" style="display:inline-block"><div class="num">' + ld.amount + ' ₽</div><div class="lbl">от ' + (ld.username || '?') + ' → +' + ld.spins_added + ' взрывов' + (ld.recognized ? '' : ' (НЕ РАСПОЗНАН)') + '</div></div>'
-    : 'Пока донатов не было';
-
-  document.getElementById('wins').innerHTML = j.wins.length
-    ? '<div style="margin-bottom:6px"><button class="gray" onclick="clearWins()">🧹 Очистить историю выигрышей</button></div>' +
-      j.wins.map(w => {
-        const isJackpot = w.prize === 'Venga II 10k';
-        return '<div class="win-row"><span class="when">' + timeStr(w.ts) + '</span>' +
-          '<span class="who">@' + (w.username || w.telegram_id) + (w.game_nick ? ' · ' + w.game_nick : '') + '</span>' +
-          '<span class="prize-badge' + (isJackpot ? ' jackpot' : '') + '" style="background:' + prizeColorJs(w.prize) + '">' + w.prize + '</span></div>';
-      }).join('')
-    : 'Выигрышей пока не было';
-
-  document.getElementById('unrecognized').innerHTML = j.unrecognized.length
-    ? '<div class="row" style="margin-bottom:8px"><button class="gray" onclick="clearAll()">🗑 Скрыть все нераспознанные</button></div>' +
-      '<table><tr><th>Сумма</th><th>Сообщение</th><th>Кому</th></tr>' +
-      j.unrecognized.map(d => '<tr><td>' + d.amount + ' ₽</td><td>' + (d.message || '—') + '</td><td>' +
-        '<input id="tg' + d.id + '" placeholder="telegram_id" style="width:110px">' +
-        ' <button onclick="resolve(' + d.id + ')">Зачислить</button>' +
-        ' <button class="gray" onclick="delDonation(' + d.id + ')">✕</button></td></tr>').join('') + '</table>'
-    : 'Нет нераспознанных донатов 👌';
-
-  renderUsers();
-  document.getElementById('promos').innerHTML = j.promos.length
-    ? '<table><tr><th>Код</th><th>Взрывов</th><th>Использован</th><th></th></tr>' +
-      j.promos.map(p => '<tr><td style="font-family:monospace">' + p.code + '</td><td>' + p.spins + '</td><td>' +
-        (p.used_by ? 'да (' + p.used_by + ')' : 'нет') + '</td><td>' +
-        '<button class="gray" onclick="delPromo(\\'' + p.code + '\\')">✕</button></td></tr>').join('') + '</table>'
-    : 'Нет промокодов';
-}
-
-function renderUsers(){
-  const q = (document.getElementById('searchQ').value || '').toLowerCase();
-  const list = USERS.filter(u =>
-    !q || (u.username || '').toLowerCase().indexOf(q) >= 0 ||
-    (u.game_nick || '').toLowerCase().indexOf(q) >= 0 ||
-    String(u.telegram_id).indexOf(q) >= 0);
-  document.getElementById('users').innerHTML = list.length
-    ? '<table><tr><th>Ник TG</th><th>Ник в игре</th><th>🔔</th><th>Титул</th><th>Прогресс до след. титула</th><th>Взрывы</th><th>Донат</th><th>Корректировка</th></tr>' +
-      list.map(u => {
-        const d = Number(u.donated) || 0;
-        const tIdx = Number(u.tier) || 0;
-        const cur = TIERS[tIdx] || TIERS[0];
-        const next = TIERS[tIdx + 1] || null;
-        let p;
-        let lbl;
-        if (!next) { p = 100; lbl = 'MAX'; }
-        else {
-          const span = next.from - cur.from;
-          p = Math.min(Math.round((d - cur.from) / span * 100), 100);
-          lbl = p + '% · до ' + next.name + ' ' + fmt(Math.max(next.from - d, 0)) + ' ₽';
-        }
-        return '<tr><td>' + (u.username || u.telegram_id) + '</td><td>' + (u.game_nick || '—') +
-          '</td><td>' + (u.hasChat ? '🔔' : '🔕') + '</td>' +
-          '<td><span class="tier-badge" style="background:' + tierColor(tIdx) + '">' + (u.tierName || cur.name) + '</span></td>' +
-          '<td><div class="mini-wrap"><div class="mini-bar"><div class="mini-fill" style="width:' + p + '%"></div></div>' +
-          '<span class="mini-num">' + lbl + '</span></div></td>' +
-          '<td><input id="sp' + u.telegram_id + '" type="number" value="' + u.spins + '" style="width:55px"></td>' +
-          '<td><input id="dn' + u.telegram_id + '" type="number" value="' + u.donated + '" style="width:70px"></td>' +
-          '<td>' +
-          '<button onclick="saveUser(\\'' + u.telegram_id + '\\')">Сохранить</button> ' +
-          '<button onclick="addSpins(\\'' + u.telegram_id + '\\')">+1</button></td></tr>';
-      }).join('') + '</table>'
-    : 'Никого не найдено';
-}
-
-async function clearWins(){
-  if (!confirm('Удалить ВСЮ историю выигрышей? Действие необратимо.')) return;
-  await fetch('/api/admin/clear-wins', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY }) });
-  toast('История выигрышей очищена 🧹');
-  load();
-}
-async function saveUser(id){
-  const spins = document.getElementById('sp' + id).value;
-  const donated = document.getElementById('dn' + id).value;
-  await fetch('/api/admin/update-user', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, telegramId: id, spins: spins, donated: donated }) });
-  toast('Сохранено ✅');
-  load();
-}
-async function addSpins(id){
-  await fetch('/api/admin/add-spins', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, telegramId: id, amount: 1 }) });
-  load();
-}
-async function resolve(id){
-  const tg = document.getElementById('tg' + id).value;
-  await fetch('/api/admin/resolve-donation', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, donationId: id, telegramId: tg }) });
-  load();
-}
-async function delDonation(id){
-  await fetch('/api/admin/delete-donation', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, donationId: id }) });
-  toast('Скрыто 🗑');
-  load();
-}
-async function clearAll(){
-  if (!confirm('Скрыть ВСЕ нераспознанные донаты? Они больше не будут показываться и напоминать о себе.')) return;
-  await fetch('/api/admin/clear-donations', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY }) });
-  toast('Скрыто 🗑');
-  load();
-}
-async function createPromo(){
-  const code = document.getElementById('promoCode').value.trim().toUpperCase();
-  const spins = document.getElementById('promoSpins').value || 1;
-  const r = await fetch('/api/admin/create-promo', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, code: code, spins: +spins }) });
-  const j = await r.json();
-  if (j.ok) { toast('Промокод создан ✅'); document.getElementById('promoCode').value=''; }
-  else toast('Такой код уже есть');
-  load();
-}
-async function generatePromo(){
-  const spins = document.getElementById('promoSpins').value || 1;
-  const r = await fetch('/api/admin/generate-promo', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, spins: +spins }) });
-  const j = await r.json();
-  if (j.ok) {
-    toast('Код: ' + j.code);
-    navigator.clipboard && navigator.clipboard.writeText(j.code);
-  }
-  load();
-}
-async function delPromo(code){
-  await fetch('/api/admin/delete-promo', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, code: code }) });
-  load();
-}
-async function broadcast(){
-  const text = document.getElementById('bcText').value.trim();
-  if (!text) return;
-  const r = await fetch('/api/admin/broadcast', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ key: KEY, text: text }) });
-  const j = await r.json();
-  document.getElementById('bcResult').textContent = 'Доставлено: ' + j.sent;
-}
-document.getElementById('searchQ').addEventListener('input', renderUsers);
-load();
-setInterval(load, 15000);
-</script></body></html>`;
-}
-
-// ====== СТАРТ ======
-app.listen(PORT, () => {
-  console.log('Золотая Удача запущена на порту ' + PORT);
-});
+input,textarea{background:#1a1a1a;color:#eee;border:1px solid #
