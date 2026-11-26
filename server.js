@@ -451,6 +451,14 @@ app.post('/api/admin/delete-promo', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ручная очистка истории выигрышей
+app.post('/api/admin/clear-wins', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const { error } = await supabase.from('wins').delete().neq('id', 0);
+  if (error) console.log('SUPABASE: не очистил выигрыши -> ' + error.message);
+  res.json({ ok: !error });
+});
+
 app.post('/api/admin/resolve-donation', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
 
@@ -704,10 +712,10 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
 .mini-fill{height:100%;width:0%;background:linear-gradient(90deg,#FF8C00,#FFD700);transition:width .4s ease}
 .mini-num{font-size:11px;color:#b8a878;white-space:nowrap}
 .tier-badge{display:inline-block;padding:2px 7px;border-radius:8px;font-size:11px;font-weight:bold;color:#111;white-space:nowrap}
-.prize-badge{display:inline-block;padding:2px 7px;border-radius:8px;color:#111;font-weight:bold;font-size:11px}
+.prize-badge{display:inline-block;padding:3px 12px;border-radius:9px;color:#111;font-weight:bold;font-size:12px;white-space:nowrap}
 .jackpot{animation:glow 1.5s ease-in-out infinite alternate}
 @keyframes glow{from{box-shadow:0 0 4px #ffd54f}to{box-shadow:0 0 14px #ffd54f}}
-.scroll-box{max-height:200px;overflow-y:auto;border:1px solid #333;border-radius:8px;max-width:420px}
+.scroll-box{max-height:200px;overflow-y:auto;border:1px solid #333;border-radius:8px;max-width:460px}
 .win-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #2a2a2a;font-size:11px}
 .win-row .when{color:#888;min-width:74px;flex-shrink:0;font-size:10px}
 .win-row .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
@@ -798,7 +806,8 @@ async function load(){
     : 'Пока донатов не было';
 
   document.getElementById('wins').innerHTML = j.wins.length
-    ? j.wins.map(w => {
+    ? '<div style="margin-bottom:6px"><button class="gray" onclick="clearWins()">🧹 Очистить историю выигрышей</button></div>' +
+      j.wins.map(w => {
         const isJackpot = w.prize === 'Venga II 10k';
         return '<div class="win-row"><span class="when">' + timeStr(w.ts) + '</span>' +
           '<span class="who">@' + (w.username || w.telegram_id) + (w.game_nick ? ' · ' + w.game_nick : '') + '</span>' +
@@ -859,6 +868,13 @@ function renderUsers(){
     : 'Никого не найдено';
 }
 
+async function clearWins(){
+  if (!confirm('Удалить ВСЮ историю выигрышей? Действие необратимо.')) return;
+  await fetch('/api/admin/clear-wins', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: KEY }) });
+  toast('История выигрышей очищена 🧹');
+  load();
+}
 async function saveUser(id){
   const spins = document.getElementById('sp' + id).value;
   const donated = document.getElementById('dn' + id).value;
