@@ -32,6 +32,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const PROGRESS_GOAL = 10000;
 const GOAL_BONUS_SPINS = 5;
 const DAILY_PROMO_HOUR = 12; // час (по Москве), когда в группу уходит промокод дня
+const DA_CUTOFF_HOURS = 24;  // обрабатывать только донаты за последние N часов
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
@@ -112,7 +113,8 @@ async function ensureUser(tgUser, chatId) {
       goal_bonus: 0,
       created_at: Date.now()
     };
-    await supabase.from('users').insert(u);
+    const { error } = await supabase.from('users').insert(u);
+    if (error) console.log('SUPABASE: не создал игрока ' + id + ' -> ' + error.message);
   } else if (chatId && !u.chat_id) {
     u.chat_id = String(chatId);
     await supabase.from('users').update({ chat_id: u.chat_id }).eq('telegram_id', id);
@@ -120,14 +122,17 @@ async function ensureUser(tgUser, chatId) {
   return u;
 }
 
+// сохранение игрока с проверкой ошибки (раньше ошибка глоталась молча)
 async function saveUser(u) {
-  await supabase.from('users').update({
+  const { error } = await supabase.from('users').update({
     spins: u.spins,
     donated: u.donated,
     game_nick: u.game_nick,
     username: u.username,
     goal_bonus: u.goal_bonus || 0
   }).eq('telegram_id', String(u.telegram_id));
+  if (error) console.log('SUPABASE: ошибка сохранения игрока ' + u.telegram_id + ' -> ' + error.message);
+  return !error;
 }
 
 function spinsForAmount(amount) {
@@ -499,7 +504,7 @@ async function maybePostDailyPromo() {
   if (!GROUP_CHAT_ID) return;
   try {
     const now = new Date(Date.now() + 3 * 3600 * 1000); // московское время (UTC+3)
-    const dateStr = now.toISOString().slice(0, 10); // '2026-11-26'
+    const dateStr = now.toISOString().slice(0, 10);
     const hour = now.getUTCHours();
     if (hour < DAILY_PROMO_HOUR) return; // до DAILY_PROMO_HOUR не публикуем
 
@@ -549,6 +554,12 @@ async function pollDonations() {
     const list = batches.flat();
 
     for (const d of list) {
+      // игнорируем старые донаты — обрабатываем только свежие
+      if (d.created_at) {
+        const created = new Date(d.created_at).getTime();
+        if (created && created < Date.now() - DA_CUTOFF_HOURS * 3600 * 1000) continue;
+      }
+
       const { data: existing } = await supabase
         .from('donations').select('id').eq('da_id', String(d.id)).maybeSingle();
       if (existing) continue;
@@ -576,6 +587,10 @@ async function pollDonations() {
         user.spins = Number(user.spins) + spins;
         user.donated = Number(user.donated) + amount;
         await grantGoalBonus(user);
+        const saved = await saveUser(user);
+        if (!saved) {
+          console.log('DA: НЕ удалось сохранить взрывы игроку ' + (user.username || user.telegram_id));
+        }
 
         await supabase.from('donations').insert({
           da_id: String(d.id), amount, message, username,
