@@ -948,3 +948,5 @@ setInterval(load, 15000);
 app.listen(PORT, () => {
   console.log('Золотая Удача запущена на порту ' + PORT);
 });
+// ====== БОТ «ПОСТЫ РР4» (добавлено) ======
+require('./bot');
