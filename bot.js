@@ -1,4 +1,4 @@
-// ====== БОТ «ПОСТЫ РР4» v2 — красивые посты + синхронизация с вебом ======
+// ====== БОТ «ПОСТЫ РР4» v3 — посты с фото, характеристиками ловли и синхронизацией с вебом ======
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -40,12 +40,12 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
   const drafts = {};
 
   // ---------- Оформление ----------
-  function postText(water, caption, link) {
+  function postText(water, body, link) {
     let t =
       '🎣 ' + LINE + ' 🎣\n\n' +
       '🌊  <b>' + water.toUpperCase() + '</b>\n\n' +
       LINE + '\n\n';
-    if (caption) t += caption + '\n\n' + LINE + '\n\n';
+    if (body) t += body + '\n\n' + LINE + '\n\n';
     if (link) t += '📖 <a href="' + link + '">Полный пост — читать в канале</a>\n';
     t += '🐟 Удачной рыбалки!';
     return t;
@@ -106,12 +106,37 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       });
       return;
     }
-    const caption = post.text || post.caption || '';
-    const text = postText(water, caption, post.link);
+
+    // Характеристики ловли
+    let specs = '';
+    if (post.fish)   specs += '🎯 Рыба: <b>' + post.fish + '</b>\n';
+    if (post.coords) specs += '📍 Точка: <b>' + post.coords + '</b>\n';
+    if (post.depth)  specs += '🌊 Глубина: <b>' + post.depth + '</b>\n';
+    if (post.clip)   specs += '🎚 Клипса: <b>' + post.clip + '</b>\n';
+    if (post.bait)   specs += '🪱 Наживка: <b>' + post.bait + '</b>\n';
+    if (post.feed)   specs += '🥣 Прикормка: <b>' + post.feed + '</b>\n';
+
+    const body = ((specs ? specs + '\n' + LINE + '\n\n' : '') + (post.text || post.caption || '')).trim();
+    const text = postText(water, body, post.link);
+
+    // Фото: сначала base64 с сайта, потом file_id бота, потом URL
+    let photos = [];
+    try { photos = post.photos ? JSON.parse(post.photos) : []; } catch (e) { photos = []; }
+
+    if (photos.length) {
+      const m = String(photos[0]).match(/^data:image\/\w+;base64,(.+)$/);
+      if (m) {
+        const buf = Buffer.from(m[1], 'base64');
+        await bot.sendPhoto(chatId, buf, {
+          caption: text.slice(0, 1024), parse_mode: 'HTML', reply_markup: keyboard
+        }).catch(() => bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: keyboard }));
+        return;
+      }
+    }
     const photo = post.photo_id || post.photo_url || null;
     if (photo) {
       await bot.sendPhoto(chatId, photo, {
-        caption: text, parse_mode: 'HTML', reply_markup: keyboard
+        caption: text.slice(0, 1024), parse_mode: 'HTML', reply_markup: keyboard
       }).catch(() => bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: keyboard }));
     } else {
       await bot.sendMessage(chatId, text, {
@@ -120,7 +145,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
     }
   }
 
-  // ---------- Сохранение поста ----------
+  // ---------- Сохранение поста (созданного через бота) ----------
   async function savePost(chatId, d) {
     await supabase.from('posts').delete().eq('water', d.water);
     const { error } = await supabase.from('posts').insert({
