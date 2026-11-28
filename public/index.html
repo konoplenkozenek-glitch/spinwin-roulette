@@ -272,7 +272,7 @@
   }
 
   /* ===== ПОСТЫ РР4 (добавлено) ===== */
-  .posts-row { display: flex; justify-content: flex-end; max-width: 320px; margin: 0 auto 4px; }
+  .posts-row { display: flex; justify-content: center; align-items: center; gap: 10px; max-width: 400px; margin: 0 auto 4px; }
   .posts-btn {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 14px; border-radius: 20px;
@@ -287,6 +287,23 @@
   @keyframes postsGlow {
     0%, 100% { box-shadow: 0 0 8px rgba(255,215,0,.3); }
     50%      { box-shadow: 0 0 18px rgba(255,215,0,.55); }
+  }
+
+  /* ===== КНОПКА «ОБЩЕНИЕ» (добавлено) ===== */
+  .group-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 20px;
+    background: #1a120b; border: 1.5px solid #4db8ff; color: #a8d8ff;
+    font-family: 'Unbounded', sans-serif; font-size: 12px; font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 0 12px rgba(77,184,255,.35);
+    transition: transform .2s, box-shadow .2s;
+    animation: groupGlow 2.2s infinite;
+  }
+  .group-btn:hover { transform: scale(1.06); box-shadow: 0 0 20px rgba(77,184,255,.55); }
+  @keyframes groupGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(77,184,255,.3); }
+    50%      { box-shadow: 0 0 18px rgba(77,184,255,.55); }
   }
   /* ===== КОНЕЦ ПОСТЫ РР4 ===== */
 </style>
@@ -322,8 +339,9 @@
   <!-- Выпавший приз -->
   <div class="prize-box" id="prizeBox"></div>
 
-  <!-- ===== ПОСТЫ РР4 (добавлено): справа над кнопкой взрыва ===== -->
+  <!-- ===== КНОПКА «ОБЩЕНИЕ» СЛЕВА + ПОСТЫ РР4 СПРАВА (добавлено) ===== -->
   <div class="posts-row">
+    <a href="https://t.me/Evgeny_Eduardovich_RR4" class="group-btn" target="_blank">💬 Общение</a>
     <a href="https://spinwin-roulette.onrender.com/posts" class="posts-btn" target="_blank">🎣 Посты РР4</a>
   </div>
   <!-- ===== КОНЕЦ ПОСТЫ РР4 ===== -->
