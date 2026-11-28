@@ -28,6 +28,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== НАСТРОЙКИ ======
 const DA_CUTOFF_HOURS = 24;
 const DAILY_PROMO_HOUR = 12;
+const VERIFIED_POSTS_COUNT = 3; // сколько опубликованных постов дают статус «проверенный»
 
 const PACKAGES = [
   { amount: 100,  spins: 1 },
@@ -195,7 +196,7 @@ function isAdminUser(u) {
          String(u.telegram_id || '') === String(ADMIN_CHAT_ID);
 }
 
-async function sendTelegramMessage(chatId, text) {
+async function sendTelegramMessage(chatId, text, extra) {
   if (!BOT_TOKEN || !chatId) {
     if (!chatId) console.log('TG: не задан chat_id, сообщение не отправлено: ' + text.slice(0, 40));
     return false;
@@ -204,7 +205,8 @@ async function sendTelegramMessage(chatId, text) {
     const r = await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'HTML' })
+      body: JSON.stringify(Object.assign(
+        { chat_id: chatId, text: text, parse_mode: 'HTML' }, extra || {}))
     });
     if (!r.ok) {
       const body = await r.text();
@@ -217,12 +219,12 @@ async function sendTelegramMessage(chatId, text) {
   }
 }
 
-async function notifyAdmin(text) {
+async function notifyAdmin(text, extra) {
   if (!ADMIN_CHAT_ID) {
     console.log('TG: ADMIN_CHAT_ID не задан — уведомление админу не отправлено: ' + text.slice(0, 60));
     return false;
   }
-  return sendTelegramMessage(ADMIN_CHAT_ID, text);
+  return sendTelegramMessage(ADMIN_CHAT_ID, text, extra);
 }
 
 async function notifyUser(u, text) {
@@ -240,6 +242,111 @@ function randomPromoCode() {
   let s = '';
   for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return 'LUCK-' + s;
+}
+
+// ====== РЕКОРДЫ РР4 ======
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// «судак 4.2 кг» -> { fish: 'судак', weight: 4.2 }
+// «карп 4200» -> { fish: 'карп', weight: 4.2 }  (число без единиц > 100 считаем граммами)
+function parseTrophy(trophy) {
+  if (!trophy) return null;
+  const t = String(trophy).replace(/,/g, '.').toLowerCase();
+  const m = t.match(/(\d+(?:\.\d+)?)\s*(кг|килограмм\w*|гр|г|грамм\w*)?/);
+  if (!m) return null;
+  let w = parseFloat(m[1]);
+  if (!w || w <= 0) return null;
+  const unit = m[2] || '';
+  if (/^г/.test(unit)) w = w / 1000;           // граммы -> кг
+  else if (!unit && w > 100) w = w / 1000;      // «4200» без единиц — граммы
+  if (w < 0.01 || w > 300) return null;         // отсев нереалистичных весов
+  let fish = t.replace(m[0], ' ')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ').trim();
+  return { fish: fish ? fish.slice(0, 40) : '', weight: Math.round(w * 100) / 100 };
+}
+
+function recordGroupText(rec) {
+  return '🏆 <b>НОВЫЙ РЕКОРД РР4!</b>\n\n' +
+    capitalize(rec.fish) + ' — <b>' + rec.weight_kg + ' кг</b>\n' +
+    'Автор: ' + (rec.author || 'Аноним') +
+    (rec.water ? '\nВодоём: ' + rec.water : '') +
+    '\n\n📋 Все рекорды: https://spinwin-roulette.onrender.com/posts';
+}
+
+// Проверяет трофей опубликованного поста, обновляет таблицу рекордов
+// и предлагает админу анонс в группу
+async function processPostRecord(p) {
+  try {
+    if (!p || Number(p.status) !== 1 || !p.trophy) return;
+
+    const parsed = parseTrophy(p.trophy);
+    let fishName = parsed ? parsed.fish : '';
+    if (!fishName && p.fish) fishName = String(p.fish).trim().slice(0, 40);
+    if (!fishName || !parsed || !parsed.weight) return;
+
+    const fish = fishName.toLowerCase();
+    const { data: existing } = await supabase.from('records')
+      .select('*').ilike('fish', fish).maybeSingle();
+
+    if (existing && Number(parsed.weight) <= Number(existing.weight_kg)) return;
+
+    let row;
+    if (existing) {
+      const { data } = await supabase.from('records').update({
+        weight_kg: parsed.weight,
+        author: p.author || 'Аноним',
+        water: p.water || null,
+        post_id: p.id,
+        created_at: Date.now()
+      }).eq('id', existing.id).select();
+      row = data && data[0];
+    } else {
+      const { data } = await supabase.from('records').insert({
+        fish: fish,
+        weight_kg: parsed.weight,
+        author: p.author || 'Аноним',
+        water: p.water || null,
+        post_id: p.id,
+        created_at: Date.now()
+      }).select();
+      row = data && data[0];
+    }
+    if (!row) return;
+
+    console.log('Рекорды: ' + fish + ' ' + parsed.weight + ' кг (' + (p.author || 'Аноним') + ')');
+    notifyAdmin('🏆 Новый рекорд: ' + capitalize(fish) + ' — ' + parsed.weight + ' кг, ' +
+      (p.author || 'Аноним') + ', ' + (p.water || 'без водоёма') +
+      (existing ? '\nПредыдущий рекорд: ' + existing.weight_kg + ' кг (' + (existing.author || '—') + ')' : '') +
+      '\n\nОпубликовать анонс в группу?', {
+        reply_markup: { inline_keyboard: [[
+          { text: '📢 Опубликовать в группу', callback_data: 'rec_ann:' + row.id },
+          { text: '✖️ Не надо', callback_data: 'rec_skip:' + row.id }
+        ]]}
+      });
+  } catch (e) {
+    console.log('Рекорды: ошибка обработки поста -> ' + e.message);
+  }
+}
+
+// ====== ПРОВЕРЕННЫЕ АВТОРЫ ======
+// Автор с VERIFIED_POSTS_COUNT+ опубликованными постами и не в бане
+async function getVerifiedAuthors() {
+  try {
+    const { data: pub } = await supabase.from('posts').select('author').eq('status', 1);
+    const counts = {};
+    (pub || []).forEach(p => {
+      const a = (p.author || '').trim();
+      if (a && a !== 'Аноним') counts[a] = (counts[a] || 0) + 1;
+    });
+    const { data: bl } = await supabase.from('banned_authors').select('author');
+    const bannedSet = new Set((bl || []).map(x => (x.author || '').toLowerCase()));
+    return Object.keys(counts).filter(a => counts[a] >= VERIFIED_POSTS_COUNT && !bannedSet.has(a.toLowerCase()));
+  } catch (e) {
+    return [];
+  }
 }
 
 // ====== API МИНИ-АППА ======
@@ -519,12 +626,24 @@ app.get('/api/posts', async (req, res) => {
   let q = supabase.from('posts').select('*').order('created_at', { ascending: false });
   if (!admin) q = q.or('status.is.null,status.eq.1');
   const { data } = await q;
-  let banned = [];
-  if (admin) {
-    const { data: bl } = await supabase.from('banned_authors').select('author').order('author');
-    banned = (bl || []).map(x => x.author);
-  }
-  res.json({ ok: true, posts: data || [], admin: admin, banned: banned });
+
+  const { data: bl } = await supabase.from('banned_authors').select('author');
+  const banned = (bl || []).map(x => x.author);
+  const verified = await getVerifiedAuthors();
+
+  res.json({
+    ok: true,
+    posts: data || [],
+    admin: admin,
+    banned: admin ? banned : [],
+    verified: verified
+  });
+});
+
+app.get('/api/posts/records', async (req, res) => {
+  const { data } = await supabase
+    .from('records').select('*').order('weight_kg', { ascending: false });
+  res.json({ ok: true, records: data || [] });
 });
 
 app.post('/api/posts/view', async (req, res) => {
@@ -540,6 +659,7 @@ app.post('/api/posts/add', async (req, res) => {
   const water = String(req.body.water || '').trim();
   const text = String(req.body.text || '').trim().slice(0, 1200);
   const author = String(req.body.author || '').trim().slice(0, 40) || 'Аноним';
+  const trophy = String(req.body.trophy || '').trim().slice(0, 80) || null;
   const fish = String(req.body.fish || '').trim().slice(0, 60) || null;
   const coords = String(req.body.coords || '').trim().slice(0, 120) || null;
   const depth = String(req.body.depth || '').trim().slice(0, 40) || null;
@@ -564,26 +684,43 @@ app.post('/api/posts/add', async (req, res) => {
     .from('banned_authors').select('author').ilike('author', author).maybeSingle();
   if (bannedRow) return res.json({ ok: false, error: 'banned' });
 
-  const { error } = await supabase.from('posts').insert({
+  // Автоодобрение: 3+ опубликованных поста и не в бане -> публикуем сразу
+  const verified = await getVerifiedAuthors();
+  const autoPublish = verified.indexOf(author) >= 0;
+
+  const { data: inserted, error } = await supabase.from('posts').insert({
     water: water, author: author, text: text,
+    trophy: trophy,
     photos: photos.length ? JSON.stringify(photos) : null,
     fish: fish, coords: coords, depth: depth,
     clip: clip, bait: bait, feed: feed,
     vid: vid, osnastka: osnastka, hook: hook, leader: leader,
     tags: tags,
     link: link || null,
-    status: 0, created_at: Date.now()
-  });
+    status: autoPublish ? 1 : 0,
+    created_at: Date.now()
+  }).select();
+
   if (!error) {
-    notifyAdmin('📝 Новый пост на модерацию!\nВодоём: ' + water +
-      '\nАвтор: ' + author +
-      (fish ? '\nРыба: ' + fish : '') +
-      (coords ? '\nТочка: ' + coords : '') +
-      (tags ? '\nСнасти: ' + tags : '') +
-      (photos.length ? '\nФото: ' + photos.length + ' шт.' : '') +
-      (text ? '\nТекст: ' + text.slice(0, 100) : ''));
+    const post = inserted && inserted[0];
+    if (autoPublish) {
+      notifyAdmin('✅ Авто-публикация: ' + author + ' (проверенный автор)\nВодоём: ' + water +
+        (fish ? '\nРыба: ' + fish : '') +
+        (trophy ? '\nТрофей: ' + trophy : '') +
+        (photos.length ? '\nФото: ' + photos.length + ' шт.' : ''));
+      if (post) processPostRecord(post);
+    } else {
+      notifyAdmin('📝 Новый пост на модерацию!\nВодоём: ' + water +
+        '\nАвтор: ' + author +
+        (fish ? '\nРыба: ' + fish : '') +
+        (trophy ? '\nТрофей: ' + trophy : '') +
+        (coords ? '\nТочка: ' + coords : '') +
+        (tags ? '\nСнасти: ' + tags : '') +
+        (photos.length ? '\nФото: ' + photos.length + ' шт.' : '') +
+        (text ? '\nТекст: ' + text.slice(0, 100) : ''));
+    }
   }
-  res.json({ ok: !error });
+  res.json({ ok: !error, auto: autoPublish });
 });
 
 app.post('/api/posts/edit', async (req, res) => {
@@ -594,6 +731,7 @@ app.post('/api/posts/edit', async (req, res) => {
   const upd = {};
   if (req.body.water !== undefined) upd.water = String(req.body.water).trim().slice(0, 60);
   if (req.body.author !== undefined) upd.author = String(req.body.author).trim().slice(0, 40) || 'Аноним';
+  if (req.body.trophy !== undefined) upd.trophy = String(req.body.trophy).trim().slice(0, 80) || null;
   if (req.body.fish !== undefined) upd.fish = String(req.body.fish).trim().slice(0, 60) || null;
   if (req.body.coords !== undefined) upd.coords = String(req.body.coords).trim().slice(0, 120) || null;
   if (req.body.depth !== undefined) upd.depth = String(req.body.depth).trim().slice(0, 40) || null;
@@ -620,13 +758,23 @@ app.post('/api/posts/edit', async (req, res) => {
   }
 
   const { error } = await supabase.from('posts').update(upd).eq('id', id);
+
+  // Если правкой автор стал проверенным и пост опубликован — проверим рекорд
+  if (!error) {
+    const { data: p } = await supabase.from('posts').select('*').eq('id', id).maybeSingle();
+    if (p) processPostRecord(p);
+  }
   res.json({ ok: !error });
 });
 
 app.post('/api/posts/moderate', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const id = parseInt(req.body.id, 10);
-  if (req.body.action === 'approve') await supabase.from('posts').update({ status: 1 }).eq('id', id);
+  if (req.body.action === 'approve') {
+    await supabase.from('posts').update({ status: 1 }).eq('id', id);
+    const { data: p } = await supabase.from('posts').select('*').eq('id', id).maybeSingle();
+    if (p) processPostRecord(p);
+  }
   if (req.body.action === 'hide') await supabase.from('posts').update({ status: 2 }).eq('id', id);
   if (req.body.action === 'restore') await supabase.from('posts').update({ status: 0 }).eq('id', id);
   if (req.body.action === 'delete') await supabase.from('posts').delete().eq('id', id);
@@ -636,7 +784,14 @@ app.post('/api/posts/moderate', async (req, res) => {
 app.post('/api/posts/bulk', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const action = req.body.action;
-  if (action === 'approve_all') await supabase.from('posts').update({ status: 1 }).in('status', [0, 3]);
+  if (action === 'approve_all') {
+    const { data: toPub } = await supabase.from('posts').select('id').in('status', [0, 3]);
+    await supabase.from('posts').update({ status: 1 }).in('status', [0, 3]);
+    for (const row of (toPub || [])) {
+      const { data: p } = await supabase.from('posts').select('*').eq('id', row.id).maybeSingle();
+      if (p) processPostRecord(p);
+    }
+  }
   if (action === 'delete_pending') await supabase.from('posts').delete().in('status', [0, 3]);
   if (action === 'delete_all') await supabase.from('posts').delete().neq('id', 0);
   res.json({ ok: true });
@@ -651,6 +806,7 @@ app.post('/api/posts/announce', async (req, res) => {
 
   let msg = '🔥 <b>Новый пост на «Постах РР4»!</b>\n\n🌊 <b>' + p.water + '</b>';
   if (p.fish) msg += '\n🎯 Рыба: ' + p.fish;
+  if (p.trophy) msg += '\n🏆 Трофей: ' + p.trophy;
   if (p.coords) msg += '\n📍 Точка: ' + p.coords;
   if (p.tags) msg += '\n🏷 ' + p.tags;
   if (p.text) msg += '\n\n' + p.text.slice(0, 200);
@@ -685,6 +841,8 @@ async function publishScheduledPosts() {
     for (const p of (due || [])) {
       await supabase.from('posts').update({ status: 1 }).eq('id', p.id);
       console.log('Посты РР4: отложенный пост #' + p.id + ' опубликован по расписанию');
+      const { data: full } = await supabase.from('posts').select('*').eq('id', p.id).maybeSingle();
+      if (full) processPostRecord(full);
     }
   } catch (e) { /* повторим на следующем проходе */ }
 }
@@ -694,6 +852,43 @@ publishScheduledPosts();
 // ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
 let tgOffset = 0;
 let getUpdatesBroken = false;
+
+// Обработка кнопок «Опубликовать в группу / Не надо» под анонсом рекорда
+async function handleRecordCallback(cb) {
+  try {
+    const data = String(cb.data || '');
+    if (!data.startsWith('rec_ann:') && !data.startsWith('rec_skip:')) return;
+    const recId = parseInt(data.split(':')[1], 10);
+    if (!recId) return;
+
+    const { data: rec } = await supabase.from('records').select('*').eq('id', recId).maybeSingle();
+    if (!rec) {
+      await sendTelegramMessage(cb.message.chat.id, 'Рекорд не найден (уже обновлён?).');
+      return;
+    }
+
+    if (data.startsWith('rec_ann:')) {
+      if (GROUP_CHAT_ID) {
+        const ok = await sendTelegramMessage(GROUP_CHAT_ID, recordGroupText(rec));
+        await sendTelegramMessage(cb.message.chat.id,
+          ok ? '📢 Анонс рекорда отправлен в группу!' : 'Не отправилось — проверь GROUP_CHAT_ID.');
+      } else {
+        await sendTelegramMessage(cb.message.chat.id, 'Не задан GROUP_CHAT_ID на Render.');
+      }
+    } else {
+      await sendTelegramMessage(cb.message.chat.id, 'Ок, анонс не отправляем 🤫');
+    }
+
+    await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/answerCallbackQuery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: cb.id })
+    });
+  } catch (e) {
+    console.log('TG: ошибка обработки кнопки рекорда -> ' + e.message);
+  }
+}
+
 async function pollBotUpdates() {
   if (!BOT_TOKEN || getUpdatesBroken) return;
   try {
@@ -708,6 +903,12 @@ async function pollBotUpdates() {
     }
     for (const upd of (j.result || [])) {
       if (upd.update_id >= tgOffset) tgOffset = upd.update_id + 1;
+
+      if (upd.callback_query) {
+        await handleRecordCallback(upd.callback_query);
+        continue;
+      }
+
       const msg = upd.message;
       if (!msg || !msg.chat) continue;
 
