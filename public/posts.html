@@ -271,6 +271,28 @@
 
     <div class="grid2">
       <div>
+        <label>Вид ловли</label>
+        <input id="fVid" maxlength="60" placeholder="Доночная, фидер...">
+      </div>
+      <div>
+        <label>Оснастка</label>
+        <input id="fOsn" maxlength="60" placeholder="Иллайн, патерностер...">
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Крючок</label>
+        <input id="fHook" maxlength="80" placeholder="Rage Series S1 S22">
+      </div>
+      <div>
+        <label>Поводок</label>
+        <input id="fLeader" maxlength="120" placeholder="плетёный шнур 6.8 кг, 60 см">
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
         <label>Наживка</label>
         <input id="fBait" maxlength="80" placeholder="кукуруза, пеллетс...">
       </div>
@@ -317,6 +339,14 @@
     <div class="grid2">
       <div><label>Глубина</label><input id="eDepth" maxlength="40"></div>
       <div><label>Клипса</label><input id="eClip" maxlength="40"></div>
+    </div>
+    <div class="grid2">
+      <div><label>Вид ловли</label><input id="eVid" maxlength="60"></div>
+      <div><label>Оснастка</label><input id="eOsn" maxlength="60"></div>
+    </div>
+    <div class="grid2">
+      <div><label>Крючок</label><input id="eHook" maxlength="80"></div>
+      <div><label>Поводок</label><input id="eLeader" maxlength="120"></div>
     </div>
     <div class="grid2">
       <div><label>Наживка</label><input id="eBait" maxlength="80"></div>
@@ -406,9 +436,9 @@ function renderTagPick(id, arr){
     '<span class="tagopt'+(arr.indexOf(t)>=0?' on':'')+'" onclick="toggleTag(\''+id+'\',\''+t+'\')">'+t+'</span>').join('');
 }
 
-function specRow(icon, label, val){
+function specRow(label, val){
   if (!val) return '';
-  return '<div class="spec-row"><span class="lbl">'+icon+' '+label+'</span><span class="val">'+esc(val)+'</span></div>';
+  return '<div class="spec-row"><span class="lbl">'+label+'</span><span class="val">'+esc(val)+'</span></div>';
 }
 
 function renderAdminBar(){
@@ -506,6 +536,10 @@ function renderCards(){
       specRow('Точка:', p.coords) +
       specRow('Глубина:', p.depth) +
       specRow('Клипса:', p.clip) +
+      specRow('Вид ловли:', p.vid) +
+      specRow('Оснастка:', p.osnastka) +
+      specRow('Крючок:', p.hook) +
+      specRow('Поводок:', p.leader) +
       specRow('Наживка:', p.bait) +
       specRow('Прикормка:', p.feed);
     let state = '<span class="card-date">'+timeStr(p.created_at)+'</span>';
@@ -626,6 +660,10 @@ async function submitPost(){
     coords: document.getElementById('fCoords').value,
     depth: document.getElementById('fDepth').value,
     clip: document.getElementById('fClip').value,
+    vid: document.getElementById('fVid').value,
+    osnastka: document.getElementById('fOsn').value,
+    hook: document.getElementById('fHook').value,
+    leader: document.getElementById('fLeader').value,
     bait: document.getElementById('fBait').value,
     feed: document.getElementById('fFeed').value,
     text: document.getElementById('fText').value,
@@ -638,7 +676,7 @@ async function submitPost(){
   btn.disabled = false;
   closeForm();
   PHOTOS = [];
-  ['fText','fFish','fCoords','fDepth','fClip','fBait','fFeed','fLink','fAuthor'].forEach(id => document.getElementById(id).value='');
+  ['fText','fFish','fCoords','fDepth','fClip','fVid','fOsn','fHook','fLeader','fBait','fFeed','fLink','fAuthor'].forEach(id => document.getElementById(id).value='');
   renderThumbs();
   if (j.ok) toast('Отправлено! Админ проверит и опубликует');
   else if (j.error==='empty') toast('Добавь фото или напиши текст');
@@ -659,6 +697,10 @@ function openEdit(id){
   document.getElementById('eCoords').value = p.coords || '';
   document.getElementById('eDepth').value = p.depth || '';
   document.getElementById('eClip').value = p.clip || '';
+  document.getElementById('eVid').value = p.vid || '';
+  document.getElementById('eOsn').value = p.osnastka || '';
+  document.getElementById('eHook').value = p.hook || '';
+  document.getElementById('eLeader').value = p.leader || '';
   document.getElementById('eBait').value = p.bait || '';
   document.getElementById('eFeed').value = p.feed || '';
   document.getElementById('eText').value = p.text || p.caption || '';
@@ -682,6 +724,10 @@ async function saveEdit(){
     coords: document.getElementById('eCoords').value,
     depth: document.getElementById('eDepth').value,
     clip: document.getElementById('eClip').value,
+    vid: document.getElementById('eVid').value,
+    osnastka: document.getElementById('eOsn').value,
+    hook: document.getElementById('eHook').value,
+    leader: document.getElementById('eLeader').value,
     bait: document.getElementById('eBait').value,
     feed: document.getElementById('eFeed').value,
     text: document.getElementById('eText').value,
