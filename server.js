@@ -71,14 +71,14 @@ async function grantTier(u) {
   return true;
 }
 
-// ====== СПИСОК НАГРАД (ИЗМЕНЕНЫ ТОЛЬКО 3 СТРОКИ) ======
+// ====== СПИСОК НАГРАД ======
 const PRIZES = [
   { name: 'Любая наживка 5 шт',   color: '#ffcf40', chance: 6.65 },
   { name: 'Приманки на выбор',    color: '#4caf50', chance: 6.65 },
   { name: '1 бутылка алкоголя',   color: '#ef4444', chance: 6.65 },
   { name: 'Кофе 500',             color: '#d2a24c', chance: 6.65 },
-  { name: 'Кофе 1000',            color: '#b78cff', chance: 4.5 }, // ВАШ ЗАПРОС (было 6.65)
-  { name: 'Золотая монета 1 шт',  color: '#ffa726', chance: 5.0 }, // ВАШ ЗАПРОС (было 6.65)
+  { name: 'Кофе 1000',            color: '#b78cff', chance: 4.5 }, // ВАШ ЗАПРОС
+  { name: 'Золотая монета 1 шт',  color: '#ffa726', chance: 5.0 }, // ВАШ ЗАПРОС
   { name: 'Премиум 3 дня',        color: '#4db8ff', chance: 5 },
   { name: 'Майка 10 шт',          color: '#ff6ec7', chance: 6.65 },
   { name: 'Нос 10 шт',            color: '#9e9e9e', chance: 6.65 },
@@ -87,7 +87,7 @@ const PRIZES = [
   { name: 'Дрейсена 10 шт',       color: '#4db8ff', chance: 6.65 },
   { name: 'Перловица 10 шт',      color: '#b78cff', chance: 6.65 },
   { name: 'Сбитень 10 шт',        color: '#ff7043', chance: 6.65 },
-  { name: 'Золотая монетка 2 шт', color: '#ffd54f', chance: 3.0 }, // ВАШ ЗАПРОС (было 5)
+  { name: 'Золотая монетка 2 шт', color: '#ffd54f', chance: 3.0 }, // ВАШ ЗАПРОС
   { name: 'Премиум 7 дней',       color: '#4db8ff', chance: 3 },
   { name: 'Премиум 30 дней',      color: '#4caf50', chance: 0.5 },
   { name: 'Venga II 10k',         color: '#ffd54f', chance: 0.001 }
@@ -638,4 +638,40 @@ async function pollDonations() {
 
         const sentToPlayer = await notifyUser(user,
           '💥 Спасибо за донат ' + amount + ' ₽! Зачислено ' + spins + ' взрывов.\nОткрой игру и крути! 🎰');
-        if
+        if (!sentToPlayer || !isAdminUser(user)) {
+          notifyAdmin(donText);
+        }
+      } else {
+        const { error: insErr2 } = await supabase.from('donations').insert({
+          da_id: String(d.id), amount: amount, message: message, username: username,
+          telegram_id: null, spins_added: 0, recognized: 0, ts: Date.now()
+        });
+        if (insErr2) console.log('SUPABASE: не записал донат -> ' + insErr2.message);
+        console.log('DA: донат НЕ распознан (ник не найден или сумма < 100)');
+        if (amount >= 100) {
+          notifyAdmin('⚠️ Донат ' + amount + ' ₽ не распознан. Сообщение: «' + (message || '—') + '», username: ' + (username || '—') + '. Зачисли вручную в админке.');
+        }
+      }
+    }
+  } catch (e) { /* повторим на следующем опросе */ }
+}
+
+setInterval(pollDonations, 30000);
+pollDonations();
+
+// ====== СТРАНИЦА АДМИНКИ ======
+function getAdminHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админка — Золотая Удача</title>
+<style>
+body{font-family:sans-serif;background:#111;color:#eee;padding:16px;max-width:960px;margin:0 auto}
+h1{color:#FFD700;font-size:20px}
+h2{color:#FFD700;font-size:15px;margin-top:18px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border:1px solid #333;padding:4px 7px;text-align:left}
+th{background:#222;color:#FFD700}
+button{background:#FFD700;border:none;padding:5px 9px;border-radius:8px;font-weight:bold;cursor:pointer}
+button.gray{background:#555;color:#fff}
+input,textarea{background:#1a
