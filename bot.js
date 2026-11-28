@@ -1,4 +1,4 @@
-// ====== БОТ «ПОСТЫ РР4» v4 — теги, просмотры, только опубликованные ======
+// ====== БОТ «ПОСТЫ РР4» v5 — теги, просмотры, поля снасти ======
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -111,13 +111,17 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
     // Характеристики ловли
     let specs = '';
-    if (post.tags)   specs += '🏷 Снасти: <b>' + post.tags + '</b>\n';
-    if (post.fish)   specs += '🎯 Рыба: <b>' + post.fish + '</b>\n';
-    if (post.coords) specs += '📍 Точка: <b>' + post.coords + '</b>\n';
-    if (post.depth)  specs += '🌊 Глубина: <b>' + post.depth + '</b>\n';
-    if (post.clip)   specs += '🎚 Клипса: <b>' + post.clip + '</b>\n';
-    if (post.bait)   specs += '🪱 Наживка: <b>' + post.bait + '</b>\n';
-    if (post.feed)   specs += '🥣 Прикормка: <b>' + post.feed + '</b>\n';
+    if (post.tags)     specs += '🏷 Снасти: <b>' + post.tags + '</b>\n';
+    if (post.fish)     specs += '🎯 Рыба: <b>' + post.fish + '</b>\n';
+    if (post.coords)   specs += '📍 Точка: <b>' + post.coords + '</b>\n';
+    if (post.depth)    specs += '🌊 Глубина: <b>' + post.depth + '</b>\n';
+    if (post.clip)     specs += '🎚 Клипса: <b>' + post.clip + '</b>\n';
+    if (post.vid)      specs += '🎣 Вид ловли: <b>' + post.vid + '</b>\n';
+    if (post.osnastka) specs += '🧵 Оснастка: <b>' + post.osnastka + '</b>\n';
+    if (post.hook)     specs += '🪝 Крючок: <b>' + post.hook + '</b>\n';
+    if (post.leader)   specs += '➰ Поводок: <b>' + post.leader + '</b>\n';
+    if (post.bait)     specs += '🪱 Наживка: <b>' + post.bait + '</b>\n';
+    if (post.feed)     specs += '🥣 Прикормка: <b>' + post.feed + '</b>\n';
 
     const body = ((specs ? specs + '\n' + LINE + '\n\n' : '') + (post.text || post.caption || '')).trim();
     const text = postText(water, body, post.link);
