@@ -219,6 +219,19 @@
     color:#b8a878; font-size:12px; font-family:'Unbounded',sans-serif;
   }
 
+  /* ===== Зум в лайтбоксе ===== */
+  #lightbox { touch-action:none; }
+  #lbImg {
+    touch-action:none;
+    transition:transform .15s ease-out;
+    will-change:transform;
+  }
+  #lbHint {
+    position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    color:#b8a878; font-size:11px; font-family:'Unbounded',sans-serif;
+    opacity:.8; pointer-events:none;
+  }
+
   #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
     background:var(--gold); color:#000; padding:10px 18px; border-radius:12px;
     font-weight:800; font-size:12px; display:none; z-index:99; max-width:90%; }
@@ -403,6 +416,7 @@
   <img id="lbImg" src="" alt="">
   <button id="lbNext" onclick="lbNav(1)">›</button>
   <div id="lbCount"></div>
+  <div id="lbHint">щипок — зум · двойной тап — ближе</div>
 </div>
 
 <div id="toast"></div>
@@ -609,6 +623,7 @@ function showFull(id, idx){
   const photos = parsePhotos(p.photos);
   if (!photos.length) return;
   LB_ID = id; LB_IDX = idx;
+  zoomReset();
   lbRender();
   document.getElementById('lightbox').classList.add('on');
 }
@@ -617,6 +632,7 @@ function lbRender(){
   const p = POSTS.find(x => x.id === LB_ID);
   if (!p) return;
   const photos = parsePhotos(p.photos);
+  zoomReset();
   document.getElementById('lbImg').src = photos[LB_IDX] || '';
   document.getElementById('lbCount').textContent = (LB_IDX + 1) + ' / ' + photos.length;
 }
@@ -633,7 +649,86 @@ function lbNav(dir){
 function lbClose(){
   document.getElementById('lightbox').classList.remove('on');
   document.getElementById('lbImg').src = '';
+  zoomReset();
 }
+
+// ===== Пинч-зум и перетаскивание =====
+let zScale = 1, zTx = 0, zTy = 0;
+let pinchStartDist = 0, pinchStartScale = 1;
+let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
+let lastTapTime = 0;
+const lbEl = document.getElementById('lightbox');
+const lbImg = document.getElementById('lbImg');
+
+function zoomApply(){
+  lbImg.style.transform = 'translate(' + zTx + 'px,' + zTy + 'px) scale(' + zScale + ')';
+}
+function zoomReset(){
+  zScale = 1; zTx = 0; zTy = 0;
+  zoomApply();
+}
+function touchDist(e){
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+function zoomClampPan(){
+  if (zScale <= 1) { zTx = 0; zTy = 0; return; }
+  const w = lbImg.clientWidth  * zScale;
+  const h = lbImg.clientHeight * zScale;
+  const maxX = Math.max((w - window.innerWidth)  / 2, 0);
+  const maxY = Math.max((h - window.innerHeight) / 2, 0);
+  if (zTx >  maxX) zTx =  maxX;
+  if (zTx < -maxX) zTx = -maxX;
+  if (zTy >  maxY) zTy =  maxY;
+  if (zTy < -maxY) zTy = -maxY;
+}
+
+lbEl.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    pinchStartDist = touchDist(e);
+    pinchStartScale = zScale;
+  } else if (e.touches.length === 1) {
+    panStartX = e.touches[0].clientX;
+    panStartY = e.touches[0].clientY;
+    panStartTx = zTx;
+    panStartTy = zTy;
+    const now = Date.now();
+    if (now - lastTapTime < 300) {
+      // двойной тап: зум 1x <-> 2.5x
+      if (zScale > 1) zoomReset();
+      else { zScale = 2.5; zoomApply(); }
+      lastTapTime = 0;
+      return;
+    }
+    lastTapTime = now;
+  }
+}, { passive:false });
+
+lbEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const d = touchDist(e);
+    if (pinchStartDist > 0) {
+      zScale = Math.min(Math.max(pinchStartScale * d / pinchStartDist, 1), 5);
+      zoomClampPan();
+      zoomApply();
+    }
+  } else if (e.touches.length === 1 && zScale > 1) {
+    zTx = panStartTx + (e.touches[0].clientX - panStartX);
+    zTy = panStartTy + (e.touches[0].clientY - panStartY);
+    zoomClampPan();
+    zoomApply();
+  }
+}, { passive:false });
+
+lbEl.addEventListener('touchend', (e) => {
+  if (e.touches.length === 0) {
+    pinchStartDist = 0;
+    if (zScale <= 1.05) zoomReset();
+    else zoomClampPan();
+  }
+});
 
 function setFilter(w){ filter = w; renderChips(); renderCards(); }
 function setTag(t){ tagFilter = (tagFilter === t) ? '' : t; renderTagChips(); renderCards(); }
