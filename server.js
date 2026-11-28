@@ -6,7 +6,7 @@ const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 const PUB = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public')
@@ -518,21 +518,35 @@ app.post('/api/posts/add', async (req, res) => {
   const water = String(req.body.water || '').trim();
   const text = String(req.body.text || '').trim().slice(0, 1200);
   const author = String(req.body.author || '').trim().slice(0, 40) || 'Аноним';
-  const photoUrl = String(req.body.photoUrl || '').trim();
+  const fish = String(req.body.fish || '').trim().slice(0, 60) || null;
+  const coords = String(req.body.coords || '').trim().slice(0, 120) || null;
+  const depth = String(req.body.depth || '').trim().slice(0, 40) || null;
+  const clip = String(req.body.clip || '').trim().slice(0, 40) || null;
+  const bait = String(req.body.bait || '').trim().slice(0, 80) || null;
+  const feed = String(req.body.feed || '').trim().slice(0, 80) || null;
   const link = String(req.body.link || '').trim();
+  let photos = Array.isArray(req.body.photos) ? req.body.photos.slice(0, 5) : [];
+  photos = photos.filter(p => /^data:image\/(jpeg|png|webp);base64,/.test(p) && p.length < 2200000);
+
   if (!water) return res.json({ ok: false, error: 'no_water' });
-  if (!text && !photoUrl) return res.json({ ok: false, error: 'empty' });
-  if (photoUrl && !/^https?:\/\//.test(photoUrl)) return res.json({ ok: false, error: 'bad_photo' });
+  if (!text && !photos.length) return res.json({ ok: false, error: 'empty' });
   if (link && !/^https?:\/\//.test(link)) return res.json({ ok: false, error: 'bad_link' });
 
   const { error } = await supabase.from('posts').insert({
     water: water, author: author, text: text,
-    photo_url: photoUrl || null, link: link || null,
+    photos: photos.length ? JSON.stringify(photos) : null,
+    fish: fish, coords: coords, depth: depth,
+    clip: clip, bait: bait, feed: feed,
+    link: link || null,
     status: 0, created_at: Date.now()
   });
   if (!error) {
-    notifyAdmin('📝 Новый пост на модерацию!\nВодоём: ' + water + '\nАвтор: ' + author +
-      (text ? '\nТекст: ' + text.slice(0, 120) : ''));
+    notifyAdmin('📝 Новый пост на модерацию!\nВодоём: ' + water +
+      '\nАвтор: ' + author +
+      (fish ? '\nРыба: ' + fish : '') +
+      (coords ? '\nТочка: ' + coords : '') +
+      (photos.length ? '\nФото: ' + photos.length + ' шт.' : '') +
+      (text ? '\nТекст: ' + text.slice(0, 100) : ''));
   }
   res.json({ ok: !error });
 });
