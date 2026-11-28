@@ -506,12 +506,34 @@ app.get('/posts', (req, res) => {
   res.sendFile(path.join(PUB, 'posts.html'));
 });
 
+const TAGS_LIST = ['Фидер','Спиннинг','Поплавок','Карпфишинг','Зимняя','Троллинг','Донка','Ночная'];
+
+function cleanTags(raw) {
+  if (!Array.isArray(raw)) return null;
+  const list = raw.map(t => String(t).slice(0, 20)).filter(t => TAGS_LIST.includes(t)).slice(0, 4);
+  return list.length ? list.join(', ') : null;
+}
+
 app.get('/api/posts', async (req, res) => {
   const admin = checkAdmin(req);
   let q = supabase.from('posts').select('*').order('created_at', { ascending: false });
   if (!admin) q = q.or('status.is.null,status.eq.1');
   const { data } = await q;
-  res.json({ ok: true, posts: data || [], admin: admin });
+  let banned = [];
+  if (admin) {
+    const { data: bl } = await supabase.from('banned_authors').select('author').order('author');
+    banned = (bl || []).map(x => x.author);
+  }
+  res.json({ ok: true, posts: data || [], admin: admin, banned: banned });
+});
+
+app.post('/api/posts/view', async (req, res) => {
+  const id = parseInt(req.body.id, 10);
+  if (!id) return res.json({ ok: false });
+  const { data: p } = await supabase.from('posts').select('views').eq('id', id).maybeSingle();
+  if (!p) return res.json({ ok: false });
+  await supabase.from('posts').update({ views: (Number(p.views) || 0) + 1 }).eq('id', id);
+  res.json({ ok: true });
 });
 
 app.post('/api/posts/add', async (req, res) => {
@@ -524,6 +546,7 @@ app.post('/api/posts/add', async (req, res) => {
   const clip = String(req.body.clip || '').trim().slice(0, 40) || null;
   const bait = String(req.body.bait || '').trim().slice(0, 80) || null;
   const feed = String(req.body.feed || '').trim().slice(0, 80) || null;
+  const tags = cleanTags(req.body.tags);
   const link = String(req.body.link || '').trim();
   let photos = Array.isArray(req.body.photos) ? req.body.photos.slice(0, 5) : [];
   photos = photos.filter(p => /^data:image\/(jpeg|png|webp);base64,/.test(p) && p.length < 2200000);
@@ -532,11 +555,17 @@ app.post('/api/posts/add', async (req, res) => {
   if (!text && !photos.length) return res.json({ ok: false, error: 'empty' });
   if (link && !/^https?:\/\//.test(link)) return res.json({ ok: false, error: 'bad_link' });
 
+  // Чёрный список авторов
+  const { data: bannedRow } = await supabase
+    .from('banned_authors').select('author').ilike('author', author).maybeSingle();
+  if (bannedRow) return res.json({ ok: false, error: 'banned' });
+
   const { error } = await supabase.from('posts').insert({
     water: water, author: author, text: text,
     photos: photos.length ? JSON.stringify(photos) : null,
     fish: fish, coords: coords, depth: depth,
     clip: clip, bait: bait, feed: feed,
+    tags: tags,
     link: link || null,
     status: 0, created_at: Date.now()
   });
@@ -545,6 +574,7 @@ app.post('/api/posts/add', async (req, res) => {
       '\nАвтор: ' + author +
       (fish ? '\nРыба: ' + fish : '') +
       (coords ? '\nТочка: ' + coords : '') +
+      (tags ? '\nСнасти: ' + tags : '') +
       (photos.length ? '\nФото: ' + photos.length + ' шт.' : '') +
       (text ? '\nТекст: ' + text.slice(0, 100) : ''));
   }
@@ -566,10 +596,18 @@ app.post('/api/posts/edit', async (req, res) => {
   if (req.body.bait !== undefined) upd.bait = String(req.body.bait).trim().slice(0, 80) || null;
   if (req.body.feed !== undefined) upd.feed = String(req.body.feed).trim().slice(0, 80) || null;
   if (req.body.text !== undefined) upd.text = String(req.body.text).trim().slice(0, 1200);
+  if (req.body.tags !== undefined) upd.tags = cleanTags(req.body.tags);
   if (req.body.link !== undefined) {
     const link = String(req.body.link).trim();
     if (link && !/^https?:\/\//.test(link)) return res.json({ ok: false, error: 'bad_link' });
     upd.link = link || null;
+  }
+  if (req.body.publishAt !== undefined) {
+    const ts = parseInt(req.body.publishAt, 10) || 0;
+    if (ts > Date.now()) {
+      upd.publish_at = ts;
+      upd.status = 3; // отложенный
+    }
   }
 
   const { error } = await supabase.from('posts').update(upd).eq('id', id);
@@ -589,11 +627,60 @@ app.post('/api/posts/moderate', async (req, res) => {
 app.post('/api/posts/bulk', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const action = req.body.action;
-  if (action === 'approve_all') await supabase.from('posts').update({ status: 1 }).eq('status', 0);
-  if (action === 'delete_pending') await supabase.from('posts').delete().eq('status', 0);
+  if (action === 'approve_all') await supabase.from('posts').update({ status: 1 }).in('status', [0, 3]);
+  if (action === 'delete_pending') await supabase.from('posts').delete().in('status', [0, 3]);
   if (action === 'delete_all') await supabase.from('posts').delete().neq('id', 0);
   res.json({ ok: true });
 });
+
+app.post('/api/posts/announce', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const { data: p } = await supabase.from('posts')
+    .select('*').eq('id', parseInt(req.body.id, 10)).maybeSingle();
+  if (!p) return res.json({ ok: false, error: 'no_post' });
+  if (!GROUP_CHAT_ID) return res.json({ ok: false, error: 'no_chat' });
+
+  let msg = '🔥 <b>Новый пост на «Постах РР4»!</b>\n\n🌊 <b>' + p.water + '</b>';
+  if (p.fish) msg += '\n🎯 Рыба: ' + p.fish;
+  if (p.coords) msg += '\n📍 Точка: ' + p.coords;
+  if (p.tags) msg += '\n🏷 ' + p.tags;
+  if (p.text) msg += '\n\n' + p.text.slice(0, 200);
+  msg += '\n\n👀 Все посты: https://spinwin-roulette.onrender.com/posts';
+
+  const ok = await sendTelegramMessage(GROUP_CHAT_ID, msg);
+  res.json({ ok: ok });
+});
+
+app.post('/api/posts/ban', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const author = String(req.body.author || '').trim().slice(0, 40);
+  if (!author || author === 'Аноним') return res.json({ ok: false, error: 'bad_author' });
+  await supabase.from('banned_authors').upsert({ author: author, created_at: Date.now() });
+  // заодно удаляем его посты с проверки
+  await supabase.from('posts').delete().eq('status', 0).ilike('author', author);
+  res.json({ ok: true });
+});
+
+app.post('/api/posts/unban', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const author = String(req.body.author || '').trim();
+  await supabase.from('banned_authors').delete().eq('author', author);
+  res.json({ ok: true });
+});
+
+// ====== ОТЛОЖЕННАЯ ПУБЛИКАЦИЯ ======
+async function publishScheduledPosts() {
+  try {
+    const { data: due } = await supabase.from('posts')
+      .select('id').eq('status', 3).lte('publish_at', Date.now());
+    for (const p of (due || [])) {
+      await supabase.from('posts').update({ status: 1 }).eq('id', p.id);
+      console.log('Посты РР4: отложенный пост #' + p.id + ' опубликован по расписанию');
+    }
+  } catch (e) { /* повторим на следующем проходе */ }
+}
+setInterval(publishScheduledPosts, 60 * 1000);
+publishScheduledPosts();
 
 // ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
 let tgOffset = 0;
