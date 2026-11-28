@@ -322,11 +322,11 @@ app.post('/api/redeem-promo', async (req, res) => {
   if (promo.used_by) return res.json({ ok: false, error: 'used' });
 
   await supabase.from('promos')
-    .update({ 
-      used_by: String(u.telegram_id), 
+    .update({
+      used_by: String(u.telegram_id),
       used_username: u.username || u.telegram_id,
       used_game_nick: u.game_nick || null,
-      used_at: Date.now() 
+      used_at: Date.now()
     })
     .eq('code', code);
 
@@ -546,6 +546,10 @@ app.post('/api/posts/add', async (req, res) => {
   const clip = String(req.body.clip || '').trim().slice(0, 40) || null;
   const bait = String(req.body.bait || '').trim().slice(0, 80) || null;
   const feed = String(req.body.feed || '').trim().slice(0, 80) || null;
+  const vid = String(req.body.vid || '').trim().slice(0, 60) || null;
+  const osnastka = String(req.body.osnastka || '').trim().slice(0, 60) || null;
+  const hook = String(req.body.hook || '').trim().slice(0, 80) || null;
+  const leader = String(req.body.leader || '').trim().slice(0, 120) || null;
   const tags = cleanTags(req.body.tags);
   const link = String(req.body.link || '').trim();
   let photos = Array.isArray(req.body.photos) ? req.body.photos.slice(0, 5) : [];
@@ -565,6 +569,7 @@ app.post('/api/posts/add', async (req, res) => {
     photos: photos.length ? JSON.stringify(photos) : null,
     fish: fish, coords: coords, depth: depth,
     clip: clip, bait: bait, feed: feed,
+    vid: vid, osnastka: osnastka, hook: hook, leader: leader,
     tags: tags,
     link: link || null,
     status: 0, created_at: Date.now()
@@ -595,6 +600,10 @@ app.post('/api/posts/edit', async (req, res) => {
   if (req.body.clip !== undefined) upd.clip = String(req.body.clip).trim().slice(0, 40) || null;
   if (req.body.bait !== undefined) upd.bait = String(req.body.bait).trim().slice(0, 80) || null;
   if (req.body.feed !== undefined) upd.feed = String(req.body.feed).trim().slice(0, 80) || null;
+  if (req.body.vid !== undefined) upd.vid = String(req.body.vid).trim().slice(0, 60) || null;
+  if (req.body.osnastka !== undefined) upd.osnastka = String(req.body.osnastka).trim().slice(0, 60) || null;
+  if (req.body.hook !== undefined) upd.hook = String(req.body.hook).trim().slice(0, 80) || null;
+  if (req.body.leader !== undefined) upd.leader = String(req.body.leader).trim().slice(0, 120) || null;
   if (req.body.text !== undefined) upd.text = String(req.body.text).trim().slice(0, 1200);
   if (req.body.tags !== undefined) upd.tags = cleanTags(req.body.tags);
   if (req.body.link !== undefined) {
@@ -1087,9 +1096,9 @@ async function createPromo(){
   const r = await fetch('/api/admin/create-promo', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ key: KEY, code: code, spins: +spins }) });
   const j = await r.json();
-  if (j.ok) { 
-    toast('Ручной промокод дня: ' + j.code); 
-    document.getElementById('promoCode').value=''; 
+  if (j.ok) {
+    toast('Ручной промокод дня: ' + j.code);
+    document.getElementById('promoCode').value='';
   }
   else toast('Такой код уже есть');
   load();
