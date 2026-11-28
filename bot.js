@@ -1,4 +1,4 @@
-// ====== БОТ «ПОСТЫ РР4» v2 — красивые посты + добавление через бота ======
+// ====== БОТ «ПОСТЫ РР4» v2 — красивые посты + синхронизация с вебом ======
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -8,7 +8,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ====== СПИСОК ВОДОЁМОВ (порядок = порядок кнопок в меню) ======
+// ====== СПИСОК ВОДОЁМОВ ======
 const WATERS = [
   'оз. Комариное',
   'оз. Лосиное',
@@ -37,7 +37,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
   const isAdmin = (chatId) => ADMIN_CHAT_ID && String(chatId) === ADMIN_CHAT_ID;
   const LINE = '━━━━━━━━━━━━━━━';
-  const drafts = {}; // черновики постов (админ-режим)
+  const drafts = {};
 
   // ---------- Оформление ----------
   function postText(water, caption, link) {
@@ -60,7 +60,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
   // ---------- Меню ----------
   async function postsMap() {
-    const { data } = await supabase.from('posts').select('water');
+    const { data } = await supabase.from('posts').select('water').or('status.is.null,status.eq.1');
     const map = {};
     (data || []).forEach(p => { map[p.water] = true; });
     return map;
@@ -80,7 +80,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       '🎣 <b>ПОСТЫ РР4</b>\n\n' +
       'Выбери водоём — откроется пост про него.\n' +
       '✅ — пост готов, ⏳ — скоро появится.\n\n' +
-      '💌 Все посты ведут на наш канал — там подробности, фото и отчёты игроков!';
+      '💌 Все посты также живут на сайте: spinwin-roulette.onrender.com/posts';
     await bot.sendMessage(chatId, text, {
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: rows }
@@ -97,7 +97,8 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
         { text: '🎣 Следующий ▶️', callback_data: 'water:' + next }
       ]]
     };
-    const { data: post } = await supabase.from('posts').select('*').eq('water', water).maybeSingle();
+    const { data: post } = await supabase.from('posts')
+      .select('*').eq('water', water).or('status.is.null,status.eq.1').maybeSingle();
 
     if (!post) {
       await bot.sendMessage(chatId, soonText(water), {
@@ -105,11 +106,13 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       });
       return;
     }
-    const text = postText(water, post.caption, post.link);
-    if (post.photo_id) {
-      await bot.sendPhoto(chatId, post.photo_id, {
+    const caption = post.text || post.caption || '';
+    const text = postText(water, caption, post.link);
+    const photo = post.photo_id || post.photo_url || null;
+    if (photo) {
+      await bot.sendPhoto(chatId, photo, {
         caption: text, parse_mode: 'HTML', reply_markup: keyboard
-      });
+      }).catch(() => bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: keyboard }));
     } else {
       await bot.sendMessage(chatId, text, {
         parse_mode: 'HTML', reply_markup: keyboard
@@ -125,6 +128,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       photo_id: d.photoId,
       caption: d.caption,
       link: d.link,
+      status: 1,
       created_at: Date.now()
     });
     if (error) {
@@ -144,7 +148,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
   bot.onText(/\/add(?:\s+(.+))?/, async (msg, match) => {
     if (!isAdmin(msg.chat.id)) {
-      return bot.sendMessage(msg.chat.id, '⛔ Эта команда только для админа.');
+      return bot.sendMessage(msg.chat.id, '⛔ Эта команда только для админа.\nПосты можно добавлять на сайте: spinwin-roulette.onrender.com/posts');
     }
     const water = (match && match[1] ? match[1] : '').trim();
     if (!water) {
@@ -187,7 +191,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
     if (text === '/skip') {
       if (d.step === 'photo') { d.step = 'caption'; return bot.sendMessage(chatId, '✍️ Шаг 2 из 3: отправь <b>текст поста</b> (до 900 знаков).', { parse_mode: 'HTML' }); }
-      if (d.step === 'link') { d.link = null; return savePost(chatId, d); }
+      if (d.step === 'link') { d.link = null; delete drafts[chatId]; return savePost(chatId, d); }
       return;
     }
 
@@ -212,8 +216,8 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
         return bot.sendMessage(chatId, '⚠️ Это не похоже на ссылку. Пришли ссылку вида https://t.me/... или /skip.');
       }
       d.link = text || null;
-      await savePost(chatId, d);
       delete drafts[chatId];
+      await savePost(chatId, d);
     }
   });
 
