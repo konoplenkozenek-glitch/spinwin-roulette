@@ -501,6 +501,50 @@ app.get('/api/test-admin', (req, res) => {
   res.json({ ok: true, admin: ADMIN_CHAT_ID || '(ADMIN_CHAT_ID не задан)' });
 });
 
+// ====== ПОСТЫ РР4: веб-интерфейс и API ======
+app.get('/posts', (req, res) => {
+  res.sendFile(path.join(PUB, 'posts.html'));
+});
+
+app.get('/api/posts', async (req, res) => {
+  const admin = checkAdmin(req);
+  let q = supabase.from('posts').select('*').order('created_at', { ascending: false });
+  if (!admin) q = q.or('status.is.null,status.eq.1');
+  const { data } = await q;
+  res.json({ ok: true, posts: data || [], admin: admin });
+});
+
+app.post('/api/posts/add', async (req, res) => {
+  const water = String(req.body.water || '').trim();
+  const text = String(req.body.text || '').trim().slice(0, 1200);
+  const author = String(req.body.author || '').trim().slice(0, 40) || 'Аноним';
+  const photoUrl = String(req.body.photoUrl || '').trim();
+  const link = String(req.body.link || '').trim();
+  if (!water) return res.json({ ok: false, error: 'no_water' });
+  if (!text && !photoUrl) return res.json({ ok: false, error: 'empty' });
+  if (photoUrl && !/^https?:\/\//.test(photoUrl)) return res.json({ ok: false, error: 'bad_photo' });
+  if (link && !/^https?:\/\//.test(link)) return res.json({ ok: false, error: 'bad_link' });
+
+  const { error } = await supabase.from('posts').insert({
+    water: water, author: author, text: text,
+    photo_url: photoUrl || null, link: link || null,
+    status: 0, created_at: Date.now()
+  });
+  if (!error) {
+    notifyAdmin('📝 Новый пост на модерацию!\nВодоём: ' + water + '\nАвтор: ' + author +
+      (text ? '\nТекст: ' + text.slice(0, 120) : ''));
+  }
+  res.json({ ok: !error });
+});
+
+app.post('/api/posts/moderate', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const id = parseInt(req.body.id, 10);
+  if (req.body.action === 'approve') await supabase.from('posts').update({ status: 1 }).eq('id', id);
+  if (req.body.action === 'delete') await supabase.from('posts').delete().eq('id', id);
+  res.json({ ok: true });
+});
+
 // ====== СБОР CHAT_ID ЧЕРЕЗ БОТА ======
 let tgOffset = 0;
 let getUpdatesBroken = false;
@@ -705,7 +749,6 @@ input,textarea{background:#1a1a1a;color:#eee;border:1px solid #444;border-radius
   <div class="stat"><div class="num" id="stPlayers">0</div><div class="lbl">игроков</div></div>
   <div class="stat"><div class="num" id="stSpins">0</div><div class="lbl">взрывов у игроков</div></div>
   <div class="stat"><div class="num" id="stWins">0</div><div class="lbl">выигрышей (последние 50)</div></div>
-  <!-- Блок "Последний донат" перенесен сюда -->
   <div class="stat" id="lastDonationStat" style="display:none; min-width:200px; border-color:rgba(255,140,0,.6)">
     <div class="num" id="ldAmount">0 ₽</div>
     <div class="lbl" id="ldDetails">—</div>
@@ -948,5 +991,6 @@ setInterval(load, 15000);
 app.listen(PORT, () => {
   console.log('Золотая Удача запущена на порту ' + PORT);
 });
-// ====== БОТ «ПОСТЫ РР4» (добавлено) ======
+
+// ====== БОТ «ПОСТЫ РР4» ======
 require('./bot');
