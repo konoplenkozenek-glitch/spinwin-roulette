@@ -551,11 +551,47 @@ app.post('/api/posts/add', async (req, res) => {
   res.json({ ok: !error });
 });
 
+app.post('/api/posts/edit', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const id = parseInt(req.body.id, 10);
+  if (!id) return res.json({ ok: false });
+
+  const upd = {};
+  if (req.body.water !== undefined) upd.water = String(req.body.water).trim().slice(0, 60);
+  if (req.body.author !== undefined) upd.author = String(req.body.author).trim().slice(0, 40) || 'Аноним';
+  if (req.body.fish !== undefined) upd.fish = String(req.body.fish).trim().slice(0, 60) || null;
+  if (req.body.coords !== undefined) upd.coords = String(req.body.coords).trim().slice(0, 120) || null;
+  if (req.body.depth !== undefined) upd.depth = String(req.body.depth).trim().slice(0, 40) || null;
+  if (req.body.clip !== undefined) upd.clip = String(req.body.clip).trim().slice(0, 40) || null;
+  if (req.body.bait !== undefined) upd.bait = String(req.body.bait).trim().slice(0, 80) || null;
+  if (req.body.feed !== undefined) upd.feed = String(req.body.feed).trim().slice(0, 80) || null;
+  if (req.body.text !== undefined) upd.text = String(req.body.text).trim().slice(0, 1200);
+  if (req.body.link !== undefined) {
+    const link = String(req.body.link).trim();
+    if (link && !/^https?:\/\//.test(link)) return res.json({ ok: false, error: 'bad_link' });
+    upd.link = link || null;
+  }
+
+  const { error } = await supabase.from('posts').update(upd).eq('id', id);
+  res.json({ ok: !error });
+});
+
 app.post('/api/posts/moderate', async (req, res) => {
   if (!checkAdmin(req)) return res.status(403).json({ ok: false });
   const id = parseInt(req.body.id, 10);
   if (req.body.action === 'approve') await supabase.from('posts').update({ status: 1 }).eq('id', id);
+  if (req.body.action === 'hide') await supabase.from('posts').update({ status: 2 }).eq('id', id);
+  if (req.body.action === 'restore') await supabase.from('posts').update({ status: 0 }).eq('id', id);
   if (req.body.action === 'delete') await supabase.from('posts').delete().eq('id', id);
+  res.json({ ok: true });
+});
+
+app.post('/api/posts/bulk', async (req, res) => {
+  if (!checkAdmin(req)) return res.status(403).json({ ok: false });
+  const action = req.body.action;
+  if (action === 'approve_all') await supabase.from('posts').update({ status: 1 }).eq('status', 0);
+  if (action === 'delete_pending') await supabase.from('posts').delete().eq('status', 0);
+  if (action === 'delete_all') await supabase.from('posts').delete().neq('id', 0);
   res.json({ ok: true });
 });
 
