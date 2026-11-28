@@ -56,8 +56,27 @@
   }
   .card-water { color:var(--gold); font-weight:800; font-size:14px; text-transform:uppercase; }
   .card-date { font-size:10px; color:#8a7a55; white-space:nowrap; }
-  .card img { width:100%; max-height:280px; object-fit:cover; display:block; }
   .card-text { padding:12px 14px; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+
+  /* Галерея фото */
+  .gallery { display:flex; gap:8px; overflow-x:auto; padding:12px 14px 4px; scroll-snap-type:x mandatory; }
+  .gallery::-webkit-scrollbar { height:6px; }
+  .gallery::-webkit-scrollbar-thumb { background:rgba(255,215,0,.4); border-radius:3px; }
+  .gallery img {
+    height:150px; width:auto; max-width:80vw; border-radius:12px; object-fit:cover;
+    border:1px solid rgba(255,215,0,.3); scroll-snap-align:center; cursor:pointer;
+  }
+
+  /* Характеристики ловли */
+  .specs { margin:10px 14px 4px; border:1px solid rgba(255,215,0,.3); border-radius:12px; overflow:hidden; }
+  .spec-row {
+    display:flex; gap:8px; padding:7px 12px; font-size:12px;
+    border-bottom:1px solid rgba(255,255,255,.06); align-items:flex-start;
+  }
+  .spec-row:last-child { border-bottom:none; }
+  .spec-row .lbl { color:#b8a878; white-space:nowrap; min-width:92px; }
+  .spec-row .val { color:#fff; word-break:break-word; }
+  .pend-label { font-size:10px; color:#ff4500; font-weight:800; text-transform:uppercase; }
   .card-foot {
     display:flex; justify-content:space-between; align-items:center; gap:8px;
     padding:9px 14px; border-top:1px solid rgba(255,255,255,.07); font-size:11px; color:#b8a878;
@@ -66,7 +85,6 @@
     color:#000; text-decoration:none; background:linear-gradient(135deg,#FFD700,#FF8C00);
     padding:6px 12px; border-radius:10px; font-weight:800; font-size:11px; white-space:nowrap;
   }
-  .pend-label { font-size:10px; color:#ff4500; font-weight:800; text-transform:uppercase; }
   .mod-btns { display:flex; gap:6px; padding:0 14px 12px; }
   .mod-btns button { flex:1; padding:8px; border:none; border-radius:10px; font-family:'Unbounded',sans-serif; font-size:11px; font-weight:800; cursor:pointer; }
   .ok-btn { background:#3ddc84; color:#000; }
@@ -82,12 +100,27 @@
     border-radius:18px; padding:18px; text-align:left; box-shadow:0 0 40px rgba(255,215,0,.25);
   }
   .modal h3 { color:var(--gold); text-align:center; font-size:15px; margin-bottom:12px; }
+  .modal .hint { font-size:10px; color:#8a7a55; margin-top:3px; }
   .modal label { display:block; font-size:11px; color:#b8a878; margin:10px 0 4px; }
   .modal input, .modal select, .modal textarea {
     width:100%; background:#0f0a04; border:1px solid rgba(255,215,0,.4); border-radius:10px;
     padding:10px; color:#fff; font-family:'Unbounded',sans-serif; font-size:12px; outline:none;
   }
-  .modal textarea { min-height:90px; resize:vertical; }
+  .modal textarea { min-height:80px; resize:vertical; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .file-zone {
+    margin-top:4px; border:2px dashed rgba(255,215,0,.5); border-radius:12px;
+    padding:14px 10px; text-align:center; cursor:pointer; font-size:12px; color:#b8a878;
+    transition:all .2s;
+  }
+  .file-zone:active { background:rgba(255,215,0,.08); }
+  #thumbs { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  #thumbs .th { position:relative; width:64px; height:64px; border-radius:8px; overflow:hidden; border:1px solid rgba(255,215,0,.4); }
+  #thumbs .th img { width:100%; height:100%; object-fit:cover; }
+  #thumbs .th span {
+    position:absolute; top:1px; right:1px; background:rgba(0,0,0,.7); color:#fff;
+    width:18px; height:18px; border-radius:50%; font-size:11px; line-height:18px; text-align:center; cursor:pointer;
+  }
   .modal .btns { display:flex; gap:8px; margin-top:14px; }
   .modal .btns button { flex:1; padding:11px; border:none; border-radius:12px;
     font-family:'Unbounded',sans-serif; font-size:12px; font-weight:800; cursor:pointer; }
@@ -101,7 +134,7 @@
 <body>
 
 <h1><span class="star">⭐</span>Посты РР4<span class="star">⭐</span></h1>
-<div class="sub">Рыбацкие посты от зрителей Золотой Удачи 🐟</div>
+<div class="sub">Рыбацкие отчёты и точки от зрителей Золотой Удачи 🐟</div>
 
 <button class="add-btn" onclick="openForm()">＋ Добавить пост</button>
 
@@ -111,19 +144,62 @@
 <div class="overlay" id="overlay">
   <div class="modal">
     <h3>📝 Новый пост</h3>
+
     <label>Водоём</label>
     <select id="fWater"></select>
+
     <label>Твой ник (как покажем в посте)</label>
     <input id="fAuthor" maxlength="40" placeholder="Например: Рыбак_Про">
+
+    <div class="grid2">
+      <div>
+        <label>Какую рыбу ловим</label>
+        <input id="fFish" maxlength="60" placeholder="Карп, судак...">
+      </div>
+      <div>
+        <label>Точка / координаты</label>
+        <input id="fCoords" maxlength="120" placeholder="47.995, 37.810 или описание">
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Глубина приманки</label>
+        <input id="fDepth" maxlength="40" placeholder="например 3.5 м">
+      </div>
+      <div>
+        <label>Клипса заброса</label>
+        <input id="fClip" maxlength="40" placeholder="например 70 м">
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Наживка</label>
+        <input id="fBait" maxlength="80" placeholder="кукуруза, пеллетс...">
+      </div>
+      <div>
+        <label>Прикормка</label>
+        <input id="fFeed" maxlength="80" placeholder="состав, объём...">
+      </div>
+    </div>
+
     <label>Расскажи про рыбалку</label>
-    <textarea id="fText" maxlength="1200" placeholder="Где ловил, на что, что поймал..."></textarea>
-    <label>Ссылка на фото (необязательно)</label>
-    <input id="fPhoto" placeholder="https://... картинка">
+    <textarea id="fText" maxlength="1200" placeholder="Как клевало, погода, снасть..."></textarea>
+
+    <label>Фото (3–5 штук)</label>
+    <div class="file-zone" onclick="document.getElementById('fFiles').click()">
+      📸 Нажми — выбери фото из галереи или с рабочего стола<br>
+      <span class="hint">до 5 фото, сожмутся автоматически</span>
+    </div>
+    <input type="file" id="fFiles" accept="image/*" multiple style="display:none" onchange="pickFiles()">
+    <div id="thumbs"></div>
+
     <label>Ссылка на канал/пост (необязательно)</label>
     <input id="fLink" placeholder="https://t.me/...">
     <div class="btns">
       <button class="cancel" onclick="closeForm()">Отмена</button>
-      <button class="save" onclick="submitPost()">Отправить</button>
+      <button class="save" id="saveBtn" onclick="submitPost()">Отправить</button>
     </div>
   </div>
 </div>
@@ -135,12 +211,66 @@ const WATERS = ['оз. Комариное','оз. Лосиное','р. Вьюн�
   'оз. Кугор','оз. Медвежье','р. Волхов','р. Северский Донец','р. Сура','Ладожское оз.',
   'оз. Янтарное','р. Ахтуба','оз. Медное','р. Нижняя Тунгуска','р. Яма','Норвежское море'];
 const ADMIN_KEY = new URLSearchParams(location.search).get('key') || '';
-let POSTS = [], filter = '';
+let POSTS = [], filter = '', PHOTOS = []; // PHOTOS — сжатые dataURL
 
 function toast(t){ const el=document.getElementById('toast'); el.textContent=t; el.style.display='block'; setTimeout(()=>el.style.display='none',3500); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 function timeStr(ts){ if(!ts) return ''; const d=new Date(ts);
   return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function parsePhotos(p){
+  if (!p) return [];
+  try { const a = JSON.parse(p); return Array.isArray(a) ? a : []; } catch(e){ return []; }
+}
+
+// Сжатие фото: максимум 1280px по длинной стороне, JPEG 75%
+function compress(file){
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1280;
+      let w = img.width, h = img.height;
+      if (w > h && w > max) { h = Math.round(h * max / w); w = max; }
+      else if (h >= w && h > max) { w = Math.round(w * max / h); h = max; }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', 0.75));
+    };
+    img.src = url;
+  });
+}
+
+function pickFiles(){
+  const files = Array.from(document.getElementById('fFiles').files || []);
+  files.slice(0, 5 - PHOTOS.length).forEach(f => {
+    if (PHOTOS.length >= 5) return;
+    compress(f).then(dataUrl => {
+      PHOTOS.push(dataUrl);
+      renderThumbs();
+    });
+  });
+  document.getElementById('fFiles').value = '';
+}
+
+function renderThumbs(){
+  const box = document.getElementById('thumbs');
+  box.innerHTML = PHOTOS.map((p, i) =>
+    '<div class="th"><img src="'+p+'"><span onclick="removePhoto('+i+')">✕</span></div>').join('');
+  if (PHOTOS.length >= 5) {
+    document.querySelector('.file-zone').style.opacity = .4;
+  } else {
+    document.querySelector('.file-zone').style.opacity = 1;
+  }
+}
+
+function removePhoto(i){ PHOTOS.splice(i,1); renderThumbs(); }
+
+function specRow(icon, label, val){
+  if (!val) return '';
+  return '<div class="spec-row"><span class="lbl">'+icon+' '+label+'</span><span class="val">'+esc(val)+'</span></div>';
+}
 
 function renderChips(){
   const box = document.getElementById('chips');
@@ -158,18 +288,40 @@ function renderCards(){
   const box = document.getElementById('cards');
   const list = POSTS.filter(p => !filter || p.water === filter);
   if (!list.length) { box.innerHTML = '<div class="empty">Постов пока нет — будь первым! 🎣</div>'; return; }
-  box.innerHTML = list.map(p =>
-    '<div class="card'+(p.status===0?' pending':'')+'">'+
-    '<div class="card-head"><span class="card-water">'+esc(p.water)+'</span>'+
-    (p.status===0 ? '<span class="pend-label">на проверке</span>' : '<span class="card-date">'+timeStr(p.created_at)+'</span>')+'</div>'+
-    (p.photo_url ? '<img src="'+esc(p.photo_url)+'" alt="" onerror="this.style.display=\'none\'">' : '')+
-    (p.text ? '<div class="card-text">'+esc(p.text)+'</div>' : '')+
-    '<div class="card-foot"><span>👤 '+esc(p.author||'Аноним')+'</span>'+
-    (p.link ? '<a href="'+esc(p.link)+'" target="_blank">📖 Открыть</a>' : '<span></span>')+'</div>'+
-    (ADMIN_KEY && p.status===0 ?
-      '<div class="mod-btns"><button class="ok-btn" onclick="mod('+p.id+',\'approve\')">✅ Опубликовать</button>'+
-      '<button class="del-btn" onclick="mod('+p.id+',\'delete\')">🗑 Удалить</button></div>' : '')+
-    '</div>').join('');
+  box.innerHTML = list.map(p => {
+    const photos = parsePhotos(p.photos);
+    const gallery = photos.length
+      ? '<div class="gallery">'+photos.map((src,i) =>
+          '<img src="'+esc(src)+'" alt="" onclick="showFull(\''+p.id+'\','+i+')" loading="lazy">').join('')+'</div>'
+      : '';
+    const specs =
+      specRow('🎯','Рыба:', p.fish) +
+      specRow('📍','Точка:', p.coords) +
+      specRow('🌊','Глубина:', p.depth) +
+      specRow('🎚','Клипса:', p.clip) +
+      specRow('🪱','Наживка:', p.bait) +
+      specRow('🥣','Прикормка:', p.feed);
+    return '<div class="card'+(p.status===0?' pending':'')+'">'+
+      '<div class="card-head"><span class="card-water">'+esc(p.water)+'</span>'+
+      (p.status===0 ? '<span class="pend-label">на проверке</span>' : '<span class="card-date">'+timeStr(p.created_at)+'</span>')+'</div>'+
+      gallery +
+      (specs ? '<div class="specs">'+specs+'</div>' : '') +
+      (p.text ? '<div class="card-text">'+esc(p.text)+'</div>' : '')+
+      '<div class="card-foot"><span>👤 '+esc(p.author||'Аноним')+'</span>'+
+      (p.link ? '<a href="'+esc(p.link)+'" target="_blank">📖 Открыть</a>' : '<span></span>')+'</div>'+
+      (ADMIN_KEY && p.status===0 ?
+        '<div class="mod-btns"><button class="ok-btn" onclick="mod('+p.id+',\'approve\')">✅ Опубликовать</button>'+
+        '<button class="del-btn" onclick="mod('+p.id+',\'delete\')">🗑 Удалить</button></div>' : '')+
+      '</div>';
+  }).join('');
+}
+
+function showFull(id, idx){
+  const p = POSTS.find(x => x.id === id);
+  if (!p) return;
+  const photos = parsePhotos(p.photos);
+  if (!photos[idx]) return;
+  window.open(photos[idx], '_blank');
 }
 
 function setFilter(w){ filter = w; renderChips(); renderCards(); }
@@ -190,21 +342,32 @@ function openForm(){
 function closeForm(){ document.getElementById('overlay').classList.remove('on'); }
 
 async function submitPost(){
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
   const body = {
     water: document.getElementById('fWater').value,
     author: document.getElementById('fAuthor').value,
+    fish: document.getElementById('fFish').value,
+    coords: document.getElementById('fCoords').value,
+    depth: document.getElementById('fDepth').value,
+    clip: document.getElementById('fClip').value,
+    bait: document.getElementById('fBait').value,
+    feed: document.getElementById('fFeed').value,
     text: document.getElementById('fText').value,
-    photoUrl: document.getElementById('fPhoto').value,
+    photos: PHOTOS,
     link: document.getElementById('fLink').value
   };
   const r = await fetch('/api/posts/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
   const j = await r.json();
+  btn.disabled = false;
   closeForm();
-  document.getElementById('fText').value=''; document.getElementById('fPhoto').value=''; document.getElementById('fLink').value='';
+  PHOTOS = [];
+  ['fText','fFish','fCoords','fDepth','fClip','fBait','fFeed','fLink'].forEach(id => document.getElementById(id).value='');
+  renderThumbs();
   if (j.ok) toast('Отправлено! Админ проверит и опубликует 🎣');
-  else if (j.error==='empty') toast('Напиши текст или добавь фото');
-  else if (j.error==='bad_photo') toast('Ссылка на фото должна начинаться с https://');
+  else if (j.error==='empty') toast('Добавь фото или напиши текст');
   else if (j.error==='bad_link') toast('Ссылка должна начинаться с https://');
+  else if (j.error==='too_big') toast('Фото слишком большие, попробуй другие');
   else toast('Ошибка, попробуй ещё раз');
 }
 
