@@ -31,6 +31,14 @@
     transition:transform .2s;
   }
   .add-btn:active { transform:scale(.95); }
+  .rec-btn {
+    padding:13px 22px; border:none; border-radius:14px; cursor:pointer;
+    background:linear-gradient(135deg,#4db8ff,#1f6feb); color:#fff;
+    font-family:'Unbounded',sans-serif; font-size:13px; font-weight:800;
+    text-transform:uppercase; box-shadow:0 0 20px rgba(77,184,255,.4);
+    transition:transform .2s;
+  }
+  .rec-btn:active { transform:scale(.95); }
 
   /* ===== КОМПАКТНАЯ АДМИН-ПАНЕЛЬ ===== */
   .admin-bar {
@@ -122,6 +130,7 @@
   .spec-row:last-child { border-bottom:none; }
   .spec-row .lbl { color:#b8a878; white-space:nowrap; min-width:92px; }
   .spec-row .val { color:#fff; word-break:break-word; }
+  .spec-row.trophy .val { color:var(--gold); font-weight:800; }
   .pend-label { font-size:10px; color:#ff4500; font-weight:800; text-transform:uppercase; }
   .sched-label { font-size:10px; color:#4db8ff; font-weight:800; text-transform:uppercase; }
   .hid-label { font-size:10px; color:#888; font-weight:800; text-transform:uppercase; }
@@ -190,6 +199,26 @@
   .cancel { background:#333; color:#fff; }
   .photo-note { font-size:10px; color:#8a7a55; margin-top:4px; }
 
+  /* ===== Рекорды ===== */
+  .rec-note { font-size:10px; color:#b8a878; line-height:1.5; margin-bottom:8px; text-align:center; }
+  .rec-table { margin-top:4px; }
+  .rec-row {
+    display:flex; align-items:center; gap:8px; padding:8px 4px;
+    border-bottom:1px solid rgba(255,255,255,.08); font-size:12px;
+  }
+  .rec-row:last-child { border-bottom:none; }
+  .rec-row .fish { color:var(--gold); font-weight:800; flex:0 0 36%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-row .kg { color:#fff; font-weight:800; white-space:nowrap; }
+  .rec-row .who { color:#a8d8ff; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-row .wtr { color:#b8a878; font-size:10px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-row .dt { color:#8a7a55; font-size:10px; white-space:nowrap; }
+  .rec-row .go {
+    background:linear-gradient(135deg,#FFD700,#FF8C00); color:#000; border:none; border-radius:8px;
+    padding:5px 9px; font-family:'Unbounded',sans-serif; font-size:9px; font-weight:800;
+    cursor:pointer; white-space:nowrap;
+  }
+  .rec-empty { color:#8a7a55; font-size:12px; padding:10px 0; text-align:center; }
+
   /* ===== ЛАЙТБОКС: просмотр фото на весь экран ===== */
   #lightbox {
     position:fixed; inset:0; background:rgba(0,0,0,.92);
@@ -244,6 +273,7 @@
 
 <div class="top-row">
   <button class="add-btn" onclick="openForm()">＋ Добавить пост</button>
+  <button class="rec-btn" onclick="toggleRecords()">🏆 Рекорды</button>
 </div>
 
 <!-- ===== КОМПАКТНАЯ АДМИН-ПАНЕЛЬ ===== -->
@@ -289,6 +319,9 @@
 
     <label>Тип ловли (можно несколько)</label>
     <div class="tagpick" id="fTags"></div>
+
+    <label>Трофей: рыба + вес (необязательно)</label>
+    <input id="fTrophy" maxlength="80" placeholder="например: судак 4.2 кг">
 
     <div class="grid2">
       <div>
@@ -375,6 +408,8 @@
     <input id="eAuthor" maxlength="40">
     <label>Тип ловли</label>
     <div class="tagpick" id="eTags"></div>
+    <label>Трофей (рыба + вес)</label>
+    <input id="eTrophy" maxlength="80" placeholder="например: судак 4.2 кг">
     <div class="grid2">
       <div><label>Рыба</label><input id="eFish" maxlength="60"></div>
       <div><label>Точка</label><input id="eCoords" maxlength="120"></div>
@@ -409,6 +444,18 @@
   </div>
 </div>
 
+<!-- Рекорды -->
+<div class="overlay" id="recOverlay">
+  <div class="modal">
+    <h3>🏆 Рекорды РР4</h3>
+    <div class="rec-note">Рекорд засчитывается, когда админ публикует пост с трофеем. Побит рекорд — объявление уходит в группу 🔥</div>
+    <div class="rec-table" id="recTable"><div class="rec-empty">Загружаем...</div></div>
+    <div class="btns">
+      <button class="cancel" onclick="closeRecords()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Лайтбокс просмотра фото -->
 <div id="lightbox" onclick="if(event.target===this)lbClose()">
   <button id="lbClose" onclick="lbClose()">✕</button>
@@ -428,7 +475,7 @@ const WATERS = ['оз. Комариное','оз. Лосиное','р. Вьюн�
 const TAGS = ['Фидер','Спиннинг','Поплавок','Карпфишинг','Зимняя','Троллинг','Донка','Ночная'];
 const ADMIN_KEY = new URLSearchParams(location.search).get('key') || '';
 const IS_ADMIN = Boolean(ADMIN_KEY);
-let POSTS = [], BANNED = [];
+let POSTS = [], BANNED = [], VERIFIED = [], RECORDS = [];
 let filter = '', tagFilter = '', PHOTOS = [], EDIT_ID = null, F_TAGS = [], E_TAGS = [];
 
 function toast(t){ const el=document.getElementById('toast'); el.textContent=t; el.style.display='block'; setTimeout(()=>el.style.display='none',3500); }
@@ -489,9 +536,9 @@ function renderTagPick(id, arr){
     '<span class="tagopt'+(arr.indexOf(t)>=0?' on':'')+'" onclick="toggleTag(\''+id+'\',\''+t+'\')">'+t+'</span>').join('');
 }
 
-function specRow(label, val){
+function specRow(label, val, cls){
   if (!val) return '';
-  return '<div class="spec-row"><span class="lbl">'+label+'</span><span class="val">'+esc(val)+'</span></div>';
+  return '<div class="spec-row'+(cls?' '+cls:'')+'"><span class="lbl">'+label+'</span><span class="val">'+esc(val)+'</span></div>';
 }
 
 function renderAdminBar(){
@@ -563,7 +610,7 @@ function renderCards(){
   else if (filter) list = list.filter(p => p.water === filter);
   if (tagFilter) list = list.filter(p => parseTags(p.tags).indexOf(tagFilter) >= 0);
   if (q) list = list.filter(p =>
-    ((p.author||'')+' '+(p.text||'')+' '+(p.fish||'')+' '+(p.coords||'')+' '+(p.water||'')+' '+(p.tags||''))
+    ((p.author||'')+' '+(p.text||'')+' '+(p.fish||'')+' '+(p.trophy||'')+' '+(p.coords||'')+' '+(p.water||'')+' '+(p.tags||''))
       .toLowerCase().indexOf(q) >= 0);
 
   if (sort === 'old') list = list.slice().sort((a,b) => (a.created_at||0) - (b.created_at||0));
@@ -580,11 +627,13 @@ function renderCards(){
   box.innerHTML = list.map(p => {
     const photos = parsePhotos(p.photos);
     const tags = parseTags(p.tags);
+    const isVer = p.author && VERIFIED.indexOf(p.author) >= 0;
     const gallery = photos.length
       ? '<div class="gallery">'+photos.map((src,i) =>
           '<img src="'+esc(src)+'" alt="" onclick="showFull('+p.id+','+i+')" loading="lazy">').join('')+'</div>'
       : '';
     const specs =
+      specRow('Трофей:', p.trophy, 'trophy') +
       specRow('Рыба:', p.fish) +
       specRow('Точка:', p.coords) +
       specRow('Глубина:', p.depth) +
@@ -606,12 +655,55 @@ function renderCards(){
       gallery +
       (specs ? '<div class="specs">'+specs+'</div>' : '') +
       (p.text ? '<div class="card-text">'+esc(p.text)+'</div>' : '')+
-      '<div class="card-foot"><span>'+esc(p.author||'Аноним')+'</span>'+
+      '<div class="card-foot"><span>'+esc(p.author||'Аноним')+(isVer?' ✅':'')+'</span>'+
       '<span class="views">Просмотры: '+(Number(p.views)||0)+'</span>'+
       (p.link ? '<a href="'+esc(p.link)+'" target="_blank">Открыть</a>' : '<span></span>')+'</div>'+
       cardBtns(p)+
       '</div>';
   }).join('');
+}
+
+// ===== Рекорды =====
+async function toggleRecords(){
+  document.getElementById('recOverlay').classList.add('on');
+  await loadRecords();
+}
+function closeRecords(){ document.getElementById('recOverlay').classList.remove('on'); }
+async function loadRecords(){
+  try {
+    const r = await fetch('/api/posts/records');
+    const j = await r.json();
+    if (j.ok) RECORDS = j.records || [];
+  } catch(e){}
+  renderRecords();
+}
+function renderRecords(){
+  const box = document.getElementById('recTable');
+  if (!RECORDS.length) {
+    box.innerHTML = '<div class="rec-empty">Рекордов пока нет — укажи трофей в посте, и он появится здесь</div>';
+    return;
+  }
+  box.innerHTML = RECORDS.map(r =>
+    '<div class="rec-row">'+
+      '<span class="fish">'+esc(r.fish)+'</span>'+
+      '<span class="kg">'+r.weight_kg+' кг</span>'+
+      '<span class="who">'+esc(r.author||'Аноним')+
+        (r.author && VERIFIED.indexOf(r.author)>=0 ? ' ✅' : '')+'</span>'+
+      '<span class="wtr">'+esc(r.water||'')+'</span>'+
+      '<span class="dt">'+timeStr(r.created_at)+'</span>'+
+      (r.post_id ? '<button class="go" onclick="openRecPost('+r.post_id+')">Пост</button>' : '')+
+    '</div>').join('');
+}
+function openRecPost(id){
+  const p = POSTS.find(x => x.id === id);
+  closeRecords();
+  if (p) {
+    const photos = parsePhotos(p.photos);
+    if (photos.length) showFull(id, 0);
+    else toast('У этого поста нет фото — ищи его в ленте');
+  } else {
+    toast('Пост не найден — возможно, удалён');
+  }
 }
 
 // ===== Лайтбокс вместо window.open =====
@@ -740,6 +832,7 @@ async function load(){
     if (j.ok) {
       POSTS = j.posts;
       BANNED = j.banned || [];
+      VERIFIED = j.verified || [];
       let seen = {};
       try { seen = JSON.parse(localStorage.getItem('rr4_seen') || '{}'); } catch(e) { seen = {}; }
       let changed = false;
@@ -818,6 +911,7 @@ async function submitPost(){
   const body = {
     water: document.getElementById('fWater').value,
     author: document.getElementById('fAuthor').value,
+    trophy: document.getElementById('fTrophy').value,
     fish: document.getElementById('fFish').value,
     coords: document.getElementById('fCoords').value,
     depth: document.getElementById('fDepth').value,
@@ -838,9 +932,9 @@ async function submitPost(){
   btn.disabled = false;
   closeForm();
   PHOTOS = [];
-  ['fText','fFish','fCoords','fDepth','fClip','fVid','fOsn','fHook','fLeader','fBait','fFeed','fLink','fAuthor'].forEach(id => document.getElementById(id).value='');
+  ['fText','fFish','fTrophy','fCoords','fDepth','fClip','fVid','fOsn','fHook','fLeader','fBait','fFeed','fLink','fAuthor'].forEach(id => document.getElementById(id).value='');
   renderThumbs();
-  if (j.ok) toast('Отправлено! Админ проверит и опубликует');
+  if (j.ok) toast(j.auto ? 'Опубликовано! Проверка не нужна ✅' : 'Отправлено! Админ проверит и опубликует');
   else if (j.error==='empty') toast('Добавь фото или напиши текст');
   else if (j.error==='bad_link') toast('Ссылка должна начинаться с https://');
   else if (j.error==='banned') toast('Ты в чёрном списке — посты не принимаются');
@@ -855,6 +949,7 @@ function openEdit(id){
   document.getElementById('editIdLbl').textContent = '№'+id;
   document.getElementById('eWater').innerHTML = WATERS.map(w=>'<option'+(w===p.water?' selected':'')+'>'+w+'</option>').join('');
   document.getElementById('eAuthor').value = p.author || '';
+  document.getElementById('eTrophy').value = p.trophy || '';
   document.getElementById('eFish').value = p.fish || '';
   document.getElementById('eCoords').value = p.coords || '';
   document.getElementById('eDepth').value = p.depth || '';
@@ -882,6 +977,7 @@ async function saveEdit(){
     id: EDIT_ID,
     water: document.getElementById('eWater').value,
     author: document.getElementById('eAuthor').value,
+    trophy: document.getElementById('eTrophy').value,
     fish: document.getElementById('eFish').value,
     coords: document.getElementById('eCoords').value,
     depth: document.getElementById('eDepth').value,
