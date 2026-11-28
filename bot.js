@@ -1,4 +1,4 @@
-// ====== БОТ «ПОСТЫ РР4» v3 — посты с фото, характеристиками ловли и синхронизацией с вебом ======
+// ====== БОТ «ПОСТЫ РР4» v4 — теги, просмотры, только опубликованные ======
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -38,6 +38,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
   const isAdmin = (chatId) => ADMIN_CHAT_ID && String(chatId) === ADMIN_CHAT_ID;
   const LINE = '━━━━━━━━━━━━━━━';
   const drafts = {};
+  const POSTS_URL = 'https://spinwin-roulette.onrender.com/posts';
 
   // ---------- Оформление ----------
   function postText(water, body, link) {
@@ -47,7 +48,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       LINE + '\n\n';
     if (body) t += body + '\n\n' + LINE + '\n\n';
     if (link) t += '📖 <a href="' + link + '">Полный пост — читать в канале</a>\n';
-    t += '🐟 Удачной рыбалки!';
+    t += '🐟 Удачной рыбалки!\n👀 Все посты: ' + POSTS_URL;
     return t;
   }
 
@@ -55,7 +56,8 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
     return '🎣 ' + LINE + ' 🎣\n\n' +
       '🌊  <b>' + water.toUpperCase() + '</b>\n\n' + LINE + '\n\n' +
       '⏳ Пост об этом водоёме скоро появится!\n' +
-      'Следи за обновлениями — будет интересно 🐟';
+      'Следи за обновлениями — будет интересно 🐟\n\n' +
+      '📝 Свой пост можно добавить на сайте: ' + POSTS_URL;
   }
 
   // ---------- Меню ----------
@@ -80,7 +82,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
       '🎣 <b>ПОСТЫ РР4</b>\n\n' +
       'Выбери водоём — откроется пост про него.\n' +
       '✅ — пост готов, ⏳ — скоро появится.\n\n' +
-      '💌 Все посты также живут на сайте: spinwin-roulette.onrender.com/posts';
+      '💌 Все посты также живут на сайте: ' + POSTS_URL;
     await bot.sendMessage(chatId, text, {
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: rows }
@@ -109,6 +111,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
     // Характеристики ловли
     let specs = '';
+    if (post.tags)   specs += '🏷 Снасти: <b>' + post.tags + '</b>\n';
     if (post.fish)   specs += '🎯 Рыба: <b>' + post.fish + '</b>\n';
     if (post.coords) specs += '📍 Точка: <b>' + post.coords + '</b>\n';
     if (post.depth)  specs += '🌊 Глубина: <b>' + post.depth + '</b>\n';
@@ -173,7 +176,7 @@ if (!TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
 
   bot.onText(/\/add(?:\s+(.+))?/, async (msg, match) => {
     if (!isAdmin(msg.chat.id)) {
-      return bot.sendMessage(msg.chat.id, '⛔ Эта команда только для админа.\nПосты можно добавлять на сайте: spinwin-roulette.onrender.com/posts');
+      return bot.sendMessage(msg.chat.id, '⛔ Эта команда только для админа.\nПосты можно добавлять на сайте: ' + POSTS_URL);
     }
     const water = (match && match[1] ? match[1] : '').trim();
     if (!water) {
